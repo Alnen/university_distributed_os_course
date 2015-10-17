@@ -93,7 +93,6 @@ atomic_int.set(a: self ref atomic_int, val: int)
 	a.mutex<- = 1;
 }
 
-
 ##
 task_generator()
 {
@@ -151,7 +150,7 @@ task_generator()
 		current_task := hd stack;
 		stack = tl stack;
 		min_val := min_value.get();
-		sys->print("[CLIENT] : sent new task id:%d count:%d cost:%d min_const: %d| of %d\n", count++, answer_adt.id, current_task.t4, min_val, number_of_tasks);
+		sys->print("[CLIENT] : sent new task id:%d count:%d cost:%d min_const: %d size: %d| of %d\n", count++, answer_adt.id, current_task.t4, min_val, current_task.t6, number_of_tasks);
 		if (current_task.t4 > min_val) continue;
 
 		input_global_task_queue<- = (answer_adt.id, current_task.t6, current_task.t0, current_task.t1, current_task.t2, current_task.t3, current_task.t4, min_val);
@@ -252,6 +251,7 @@ init(nil: ref Draw->Context, args: list of string)
 
 	input_global_task_queue = chan[100] of (int, int, array of int, array of int, array of int, list of dts->JumpType, int, int);
 	
+	spawn run_server();
 	sys->print("HI\n");
 	spawn task_generator();
 }
