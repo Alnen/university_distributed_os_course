@@ -77,10 +77,9 @@ def print_answer(answer: AnswerType):
     print("cost: ", answer.cost)
     print('========================')
 
-
+#@profile
 def calculate_additional_cost_and_correct_matrix(matrix):
-    row_number = matrix.shape[0]
-    column_number = matrix.shape[1]
+    row_number, column_number = matrix.shape
     additional_cost = 0
 
     for i in range(row_number):
@@ -88,17 +87,17 @@ def calculate_additional_cost_and_correct_matrix(matrix):
         min_value = POSITIVE_INF
 
         for j in range(column_number):
-            if matrix[i][j] == POSITIVE_INF:
+            if matrix.item(i, j) == POSITIVE_INF:
                 infinity_count += 1
-            elif matrix[i][j] < min_value:
-                min_value = matrix[i][j]
+            elif matrix.item(i, j) < min_value:
+                min_value = matrix.item(i, j)
 
         if infinity_count == row_number:
             return False, 0
 
         if min_value != 0:
             for j in range(column_number):
-                if matrix[i][j] != POSITIVE_INF:
+                if matrix.item(i, j) != POSITIVE_INF:
                     matrix[i][j] -= min_value
             additional_cost += min_value
 
@@ -107,45 +106,57 @@ def calculate_additional_cost_and_correct_matrix(matrix):
         min_value = POSITIVE_INF
 
         for j in range(row_number):
-            if matrix[j][i] == POSITIVE_INF:
+            if matrix.item(j, i) == POSITIVE_INF:
                 infinity_count += 1
-            elif matrix[j][i] < min_value:
-                min_value = matrix[j][i]
+            elif matrix.item(j, i) < min_value:
+                min_value = matrix.item(j, i)
 
         if infinity_count == row_number:
             return False, 0
 
         if min_value != 0:
             for j in range(column_number):
-                if matrix[j][i] != POSITIVE_INF:
+                if matrix.item(j, i) != POSITIVE_INF:
                     matrix[j][i] -= min_value
             additional_cost += min_value
 
     return True, additional_cost
 
-
+#@profile
 def find_zero_with_biggest_weight(matrix):
+    row_size, column_size = matrix.shape
     zero_with_most_weight = ZeroInfoType(0, 0, NEGATIVE_INF)
-    for i, j in itertools.product(range(matrix.shape[0]), range(matrix.shape[1])):
-        if matrix[i][j] == 0:
-            weight = 0
+    zero_index = np.where(matrix == 0)
+    for (i, j) in zip(zero_index[0], zero_index[1]):
+        weight = 0
 
-            min_value = POSITIVE_INF
-            for z in range(matrix.shape[0]):
-                if z != j and matrix[i][z] < min_value and matrix[i][z] != POSITIVE_INF:
-                    min_value = matrix[i][z]
+        row = matrix[i]
+        row_with_filtered_infinities = row[np.where(row != POSITIVE_INF)]
+        filtered_current_element = row_with_filtered_infinities[np.where(row_with_filtered_infinities != j)]
+        if len(filtered_current_element) != 0:
+            min_value = filtered_current_element.min()
             if min_value != POSITIVE_INF:
                 weight += min_value
 
-            min_value = POSITIVE_INF
-            for z in range(matrix.shape[1]):
-                if z != i and matrix[z][j] < min_value and matrix[z][j] != POSITIVE_INF:
-                    min_value = matrix[z][j]
+        min_value = POSITIVE_INF
+        for z in range(matrix.shape[1]):
+            value = matrix.item(z, j)
+            if z != i and value < min_value and value != POSITIVE_INF:
+                min_value = value
+        if min_value != POSITIVE_INF:
+            weight += min_value
+        """
+        column = matrix[:, j]
+        column_with_filtered_infinities = column[np.where(column != POSITIVE_INF)]
+        column_with_filtered_current_element = column_with_filtered_infinities[np.where(column_with_filtered_infinities != i)]
+        if len(column_with_filtered_current_element) != 0:
+            min_value = column_with_filtered_current_element.min()
             if min_value != POSITIVE_INF:
                 weight += min_value
+        """
 
-            if zero_with_most_weight.weight < weight:
-                zero_with_most_weight = ZeroInfoType(i, j, weight)
+        if zero_with_most_weight.weight < weight:
+            zero_with_most_weight = ZeroInfoType(i, j, weight)
     return zero_with_most_weight
 
 
@@ -195,7 +206,7 @@ def forbid_jump_if_needed(matrix, x_mapping, y_mapping, all_jumps):
 
 
 # rethink
-def generate_sub_task_data(matrix, x_mapping, y_mapping, all_jumps, zero_with_most_weight): #  : SubTaskDataType
+def generate_sub_task_data(matrix, x_mapping, y_mapping, all_jumps, zero_with_most_weight):
     new_matrix = np.empty([matrix.shape[0]-1, matrix.shape[1]-1], dtype=np.int32)
     new_x_mapping = np.empty([matrix.shape[0]-1], dtype=np.int32)
     new_y_mapping = np.empty([matrix.shape[0]-1], dtype=np.int32)
@@ -209,12 +220,12 @@ def generate_sub_task_data(matrix, x_mapping, y_mapping, all_jumps, zero_with_mo
     i_y = 0
     for i in range(matrix.shape[0]):
         if i != zero_with_most_weight.row:
-            new_x_mapping[i_x] = x_mapping[i];
+            new_x_mapping[i_x] = x_mapping[i]
             j_y = 0
             for j in range(matrix.shape[1]):
                 if j == zero_with_most_weight.column:
                     continue
-                new_matrix[i_x][j_y] = matrix[i][j]
+                new_matrix[i_x][j_y] = matrix.item(i, j)
                 j_y += 1
         else:
             i_x -= 1
@@ -230,8 +241,10 @@ def generate_sub_task_data(matrix, x_mapping, y_mapping, all_jumps, zero_with_mo
     forbid_jump_if_needed(new_matrix, new_x_mapping, new_y_mapping, new_all_jumps)
     return SubTaskDataType(new_matrix, new_x_mapping, new_y_mapping, new_all_jumps)
 
-
+branch_count = 0
 def solve_impl(matrix, x_mapping, y_mapping, all_jumps, solution_cost, min_cost):
+    global branch_count
+    branch_count += 1
     if matrix.shape[0] == 0 or matrix.shape[0] == 1:
         return ERROR_ANSWER
 
@@ -345,7 +358,6 @@ def solve(matrix):
 
 def run_test_case():
     task = test_case_task()
-    print(task.matrix)
     t1 = time.clock()
     answer = solve_impl(task.matrix, task.column_mapping, task.row_mapping, [], 0, POSITIVE_INF)
     t2 = time.clock()
@@ -354,21 +366,17 @@ def run_test_case():
 
 
 def run_benchmark():
-    for i in range(5, 50):
+    global branch_count
+    for i in range(5, 25):
+        branch_count = 0
         task = generate_random_task_of_size_n(i, 100, 0)
         t1 = time.clock()
-        solve_impl(task.matrix, task.column_mapping, task.row_mapping, [], 0, POSITIVE_INF)
+        answer = solve_impl(task.matrix, task.column_mapping, task.row_mapping, [], 0, POSITIVE_INF)
         t2 = time.clock()
-        print("For i : %d it took %d msec\n", i, t2-t1)
+        print("For i : {} it took {} msec cost {} branch_count = {} ".format(i, t2-t1, answer.cost, branch_count))
 
 if __name__ == '__main__':
     #run_test_case()
     run_benchmark()
-    arr1 = np.array([[1, 2], [1, 3]])
-    arr2 = np.array([3, 8])
-    arr3 = np.array([5, 9])
-    debug_print(arr1, arr2, arr3, ZeroInfoType(0, 1, 100))
-    print_answer(AnswerType([(0, 1), (1, 3), (3, 2)], 50))
-    print(1)
 
 
