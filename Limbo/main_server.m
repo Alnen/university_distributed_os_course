@@ -172,14 +172,6 @@ task_generator()
 	delete_output_chan_list(answer_adt);
 }
 
-##
-self_connect()
-{
-	(_, self_con) = sys->dial("tcp!127.0.0.1!5000", "");
-	result := sys->mount(self_con.dfd, nil, ".", sys->MBEFORE, nil);
-	if (result == -1) raise "aba";
-}
-
 self_disconnect()
 {
 	sys->unmount(nil, nil);
@@ -218,6 +210,172 @@ run_server()
 	return ;
 }
 
+parse_task(s: string): (array of int, array of int, array of int, int)
+{
+	(size_of_message, token_list) := sys->tokenize(s, "\n");
+	
+	# <size> - 6
+	curr := tl tl token_list;
+	size_string := hd curr;
+	(size, _) := str->toint(size_string[6: len(size_string) - 7], 10);
+
+	matrix_string := (hd tl curr);
+	matrix_string = matrix_string[6: len(matrix_string) - 7];
+
+	matrix := array[size*size] of int;
+
+	for (i:=0;i<size*size;++i)
+	{
+		(matrix[i], matrix_string) = str->toint(matrix_string, 10);
+	}
+
+	x_mapping := array[size] of int;
+	y_mapping := array[size] of int;
+
+	for (i=0;i<size;++i)
+	{
+		x_mapping[i] = i;
+		y_mapping[i] = i;
+	}
+
+	return (matrix, x_mapping, y_mapping, size);
+}
+
+seralize_answer(answer : ref (list of (int, int), int)) : array of byte
+{
+	str_data := "<xml version=\"1.0\" encoding=\"UTF-8\">\n<task>\n\t<cost>";
+	str_data += string answer.t1;
+	str_data += "</cost>\n\t<jumps>";
+
+	jumps := answer.t0;
+	if (jumps != nil)
+	{
+		curr_jump := hd jumps;
+		jumps = tl jumps;
+
+		str_data += string curr_jump.t0;
+		str_data += "-" + string curr_jump.t1;
+		while (jumps != nil)
+		{
+			curr_jump = hd jumps;
+			jumps = tl jumps;
+
+			str_data += "," + string curr_jump.t0;
+			str_data += "-" + string curr_jump.t1;
+		}
+	}
+	str_data += "</jumps>\n<task>";
+
+	return array of byte str_data;
+}
+
+run_clent_thread(c : ref dial->Connection)
+{
+	sys->print("[CLIENT] : STARTING\n");
+	buffer := array[1000] of byte;
+	task_size : int;
+	#(task_size, real_data) = str->toint(real_data, 10);
+	sys->print("[CLIENT] : STARTING\n");
+	read_size := sys->read(c.dfd, buffer, 1000);
+	task := parse_task(string buffer[:read_size]);
+	sys->print("[CLIENT] : NEW TASK OF SIZE %d\n", task.t3);
+	
+	sys->print("[CLIENT] : STARTING\n");
+
+	stack : list of ref dts->TaskType;
+	tmp : dts->TaskType;
+	tmp = (task.t0, task.t1, task.t2, nil, 0, dts->POSITIVE_INF, task.t3);
+	stack = ref tmp :: stack;
+
+	flag := 0;
+	sub_task1, sub_task2 : dts->TaskType;
+	sys->print("[CLIENT] : *\n");
+	answer_adt := add_output_chan_list();
+	number_of_tasks := 0;
+	sys->print("[CLIENT] : INITIALIZED\n");
+
+	#split
+	do
+	{
+		current_tasl := hd stack;
+		stack = tl stack;
+		(flag, (sub_task1, sub_task2)) = dts->crusher_impl(current_tasl.t0, current_tasl.t1, current_tasl.t2, current_tasl.t3, current_tasl.t4, current_tasl.t5, current_tasl.t6);
+		sys->print("[CLIENT] : flag: %d \n", flag);
+		if (flag)
+		{
+			stack = ref sub_task2 :: ref sub_task1 :: stack;
+		}
+	}
+	while(flag);
+	stack = lists->reverse(stack);
+	sys->print("[CLIENT] : SOLVING\n");
+
+	#solve
+	min_value := atomic_int.new(dts->POSITIVE_INF);
+	num := chan[10] of int;
+
+	number_of_tasks = len stack;
+	final_answer_cchannel := chan[1] of ref dts->AnswerType;
+	spawn consumer(answer_adt.channel, number_of_tasks, final_answer_cchannel, min_value, num);
+
+	count := 0;
+
+	while (stack != nil)
+	{
+		current_task := hd stack;
+		stack = tl stack;
+		min_val := min_value.get();
+		sys->print("[CLIENT] : sent new task id:%d count:%d cost:%d min_const: %d size: %d| of %d\n", count++, answer_adt.id, current_task.t4, min_val, current_task.t6, number_of_tasks);
+		if (current_task.t4 > min_val) continue;
+
+		input_global_task_queue<- = (answer_adt.id, current_task.t6, current_task.t0, current_task.t1, current_task.t2, current_task.t3, current_task.t4, min_val);
+		num<- = 1;
+	}
+	num<- = 0;
+	#collect
+	sys->print("[CLIENT] : COLLECT\n");
+	best_solution := <- final_answer_cchannel;
+	answer_packet := seralize_answer(best_solution);
+
+	if (best_solution.t1 != dts->POSITIVE_INF)
+	{
+		sys->print("***TASK SOLVED\n");
+	}
+	else
+	{
+		sys->print("***TASK NOT SOLVE\n");
+	}
+	delete_output_chan_list(answer_adt);
+
+	sys->write(c.dfd, answer_packet, len answer_packet);
+}
+
+server_for_clients_thread(c : ref dial->Connection)
+{
+	while(1)
+	{
+		sys->print("WAITING FOR CONNECTION\n");
+		a := dial->listen(c);
+		sys->print("NEW CONNECTION\n");
+		fd := dial->accept(a);
+		a.dfd = fd;
+		sys->print("ACCEPTED IT\n");
+
+		spawn run_clent_thread(a);
+	}
+}
+
+run_server_for_clients()
+{
+	c := dial->announce("tcp!127.0.0.1!6000");
+	sys->print("ANNOUNCED FOR CLIENTS\n");
+	if (c != nil)
+	{
+		server_for_clients_thread(c);
+	}
+	return ;
+}
+
 init(nil: ref Draw->Context, args: list of string)
 {
 	sys = load Sys Sys->PATH;
@@ -252,8 +410,8 @@ init(nil: ref Draw->Context, args: list of string)
 	input_global_task_queue = chan[100] of (int, int, array of int, array of int, array of int, list of dts->JumpType, int, int);
 	
 	spawn run_server();
-	sys->print("HI\n");
-	spawn task_generator();
+	sys->print("Starting client\n");
+	spawn run_server_for_clients();
 }
 
 dir(name: string, perm: int, qid: big): Sys->Dir
