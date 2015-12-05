@@ -115,7 +115,7 @@ class TaskSolverServer:
             self.log.info('[TaskSolverServer][task_distributor] Got new task. Waiting for free worker...')
             free_worker = await self.free_workers.get()
             self.log.info('[TaskSolverServer][task_distributor] Got free worker {}.'.format(free_worker))
-            self.log.info('[TaskSolverServer][task_distributor][DEBUG] {} {} {}'.format((task_id, subtask), free_worker, int(TaskSolverServer.MPIMessageTag.TaskInfo)))
+            self.log.debug('[TaskSolverServer][task_distributor][DEBUG] {} {} {}'.format((task_id, subtask), free_worker, int(TaskSolverServer.MPIMessageTag.TaskInfo)))
             req = self.comm.isend((task_id, subtask), dest=free_worker, tag=int(TaskSolverServer.MPIMessageTag.TaskInfo))
             self.log.info('[TaskSolverServer][task_distributor] Sent new task with id {} to {}'.format(task_id, free_worker))
             while req.test() != (True, None):
@@ -237,7 +237,7 @@ def run_server(*args, frontend_server_connection_info, frontend_server_callback_
         )]
         tasks.extend(server.get_coroutines())
         try:
-            loop.run_until_complete(asyncio.wait(tasks))
+            loop.run_until_complete(asyncio.wait(tasks))# , return_when=asyncio.FIRST_EXCEPTION
         except KeyboardInterrupt:
             loop.close()
     else:

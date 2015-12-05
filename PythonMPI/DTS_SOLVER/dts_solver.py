@@ -287,7 +287,8 @@ def solve_impl(matrix, x_mapping, y_mapping, all_jumps, solution_cost, min_cost)
         return ERROR_ANSWER
 
 
-def crusher_impl(matrix, x_mapping , y_mapping, all_jumps, solution_cost, min_cost):
+def crusher_impl(matrix, x_mapping, y_mapping, all_jumps, solution_cost, min_cost):
+
     success, additional_cost = calculate_additional_cost_and_correct_matrix(matrix)
     if not success:
         return False, (None, None)
@@ -301,9 +302,9 @@ def crusher_impl(matrix, x_mapping , y_mapping, all_jumps, solution_cost, min_co
     )
 
     # call this function recursively
-    task1 = (new_matrix, new_x_mapping, new_y_mapping, new_all_jumps, solution_cost, min_cost)
+    task1 = [new_matrix, new_x_mapping, new_y_mapping, new_all_jumps, solution_cost, min_cost]
     matrix[zero_with_most_weight.row][zero_with_most_weight.column] = POSITIVE_INF
-    task2 = (matrix, x_mapping, y_mapping, all_jumps, solution_cost, min_cost)
+    task2 = [matrix, x_mapping, y_mapping, all_jumps, solution_cost, min_cost]
 
     return True, (task1, task2)
 
