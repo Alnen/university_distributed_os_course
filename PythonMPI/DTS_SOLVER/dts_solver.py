@@ -1,6 +1,5 @@
 import numpy as np
 import collections
-import itertools
 import enum
 import time
 
@@ -46,13 +45,6 @@ NVAL_INDEX = -1
 ERROR_ANSWER = AnswerType([], POSITIVE_INF)
 
 
-# Func
-# solve: fn(matrix: MatrixType) : AnswerType;
-#    generate_random_task_of_size_n: fn(n: int, modulus: int, seed: int) : DataTaskType;
-#    crusher_impl: fn(matrix : MatrixType, x_mapping : array of int, y_mapping : array of int, all_jumps: list of JumpType, solution_cost : int, min_cost : int, n : int): (int, (TaskType, TaskType));
-#    solve_impl: fn(matrix : MatrixType, x_mapping : array of int, y_mapping : array of int, all_jumps: list of JumpType, solution_cost : int, min_cost : int, n : int): AnswerType;
-
-
 def debug_print(matrix, x_mapping, y_mapping, zero_with_most_weight):
     print('=============MATRIX=================')
     print(matrix)
@@ -77,7 +69,7 @@ def print_answer(answer: AnswerType):
     print("cost: ", answer.cost)
     print('========================')
 
-#@profile
+
 def calculate_additional_cost_and_correct_matrix(matrix):
     row_number, column_number = matrix.shape
     additional_cost = 0
@@ -122,7 +114,7 @@ def calculate_additional_cost_and_correct_matrix(matrix):
 
     return True, additional_cost
 
-#@profile
+
 def find_zero_with_biggest_weight(matrix):
     row_size, column_size = matrix.shape
     zero_with_most_weight = ZeroInfoType(0, 0, NEGATIVE_INF)
@@ -145,15 +137,6 @@ def find_zero_with_biggest_weight(matrix):
                 min_value = value
         if min_value != POSITIVE_INF:
             weight += min_value
-        """
-        column = matrix[:, j]
-        column_with_filtered_infinities = column[np.where(column != POSITIVE_INF)]
-        column_with_filtered_current_element = column_with_filtered_infinities[np.where(column_with_filtered_infinities != i)]
-        if len(column_with_filtered_current_element) != 0:
-            min_value = column_with_filtered_current_element.min()
-            if min_value != POSITIVE_INF:
-                weight += min_value
-        """
 
         if zero_with_most_weight.weight < weight:
             zero_with_most_weight = ZeroInfoType(i, j, weight)
@@ -241,10 +224,8 @@ def generate_sub_task_data(matrix, x_mapping, y_mapping, all_jumps, zero_with_mo
     forbid_jump_if_needed(new_matrix, new_x_mapping, new_y_mapping, new_all_jumps)
     return SubTaskDataType(new_matrix, new_x_mapping, new_y_mapping, new_all_jumps)
 
-branch_count = 0
+
 def solve_impl(matrix, x_mapping, y_mapping, all_jumps, solution_cost, min_cost):
-    global branch_count
-    branch_count += 1
     if matrix.shape[0] == 0 or matrix.shape[0] == 1:
         return ERROR_ANSWER
 
@@ -362,21 +343,19 @@ def run_test_case():
     answer = solve_impl(task.matrix, task.column_mapping, task.row_mapping, [], 0, POSITIVE_INF)
     t2 = time.clock()
     print_answer(answer)
-    print("It took {} msec\n ", t2-t1)
+    print("It took {} msec\n ".format(t2-t1))
 
 
 def run_benchmark():
-    global branch_count
     for i in range(5, 25):
-        branch_count = 0
         task = generate_random_task_of_size_n(i, 100, 0)
         t1 = time.clock()
         answer = solve_impl(task.matrix, task.column_mapping, task.row_mapping, [], 0, POSITIVE_INF)
         t2 = time.clock()
-        print("For i : {} it took {} msec cost {} branch_count = {} ".format(i, t2-t1, answer.cost, branch_count))
+        print("For i : {} it took {} msec cost {} ".format(i, t2-t1, answer.cost))
 
 if __name__ == '__main__':
-    #run_test_case()
-    run_benchmark()
+    run_test_case()
+    #run_benchmark()
 
 
