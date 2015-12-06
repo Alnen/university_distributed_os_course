@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	tsp_types "tsp_service/tsp/types"
+	tsp_types "tsp/types"
 )
 
 var branch_count int = 0

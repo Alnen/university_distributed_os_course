@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"io"
 	"sync"
-	tsp_types "tsp_service/tsp/types"
-	tsp_solver "tsp_service/tsp/solver"
+	tsp_types "tsp/types"
+	tsp_solver "tsp/solver"
 )
 
 type WorkerCmdType int

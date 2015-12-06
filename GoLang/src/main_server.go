@@ -13,8 +13,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
-	tsp_types "tsp_service/tsp/types"
-	tsp_task_manager "tsp_service/tsp/task_manager"
+	tsp_types "tsp/types"
+	tsp_task_manager "tsp/task_manager"
 )
 
 type (

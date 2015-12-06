@@ -7,8 +7,8 @@ import (
 	//"os"
 	"strconv"
 	"container/list"
-	tsp_solver "tsp_service/tsp/solver"
-	tsp_types "tsp_service/tsp/types"
+	tsp_solver "tsp/solver"
+	tsp_types "tsp/types"
 	//"fmt"
 )
 
