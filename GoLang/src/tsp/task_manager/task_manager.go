@@ -2,14 +2,13 @@ package task_manager
 
 import (
 	//"bufio"
-	//"fmt"
+	"fmt"
 	"net"
 	//"os"
 	"strconv"
 	"container/list"
 	tsp_solver "tsp/solver"
 	tsp_types "tsp/types"
-	//"fmt"
 )
 
 type AtomicInt struct {
@@ -111,36 +110,39 @@ func AddNewWorker(worker WorkerInfo) {
 }
 
 func SolveTask(client ClientInfo, task_data []byte, ch_logs chan string) {
-	ch_logs <- "SolveTask: Start"
+	fmt.Println("SolveTask: Start " + string(task_data))
 	task := tsp_types.TaskType{}
 	task.FromXml(task_data)
-	ch_logs <- "SolveTask: Start 2"
+	fmt.Println("SolveTask: Start 2",task.Size, len(task.Matrix))
 	stack := make([]*tsp_types.TaskType, 1)
-	ch_logs <- "SolveTask: 121"
-	tmp := task
-	ch_logs <- "SolveTask: 121"
-	stack[0] = &tmp
-	ch_logs <- "SolveTask: 11"
+	fmt.Println("SolveTask: 121*")
+	fmt.Println("SolveTask: 121")
+	stack[0] = &task
+	fmt.Println("SolveTask: 11")
 	answer_adt := add_output_chan_list(ch_logs)
-	ch_logs <- "SolveTask: 12"
+	fmt.Println("SolveTask: 12")
 	//split
 	for len(stack) > 0 {
-		ch_logs <- ("Stack Len: " + strconv.Itoa(len(stack)))
+		fmt.Println("Stack Len: " + strconv.Itoa(len(stack)))
 		current_task := stack[len(stack)-1]
+		fmt.Println("SolveTask: *1",current_task.Size, len(current_task.Matrix))
 		if len(stack) == 1 {
 			stack = make([]*tsp_types.TaskType, 0)
 		} else {
 			stack = stack[:len(stack)-1]
 		}
-		sub_task_info := tsp_solver.CrusherImpl(*current_task)
+		fmt.Println("SolveTask: *2")
+		sub_task_info := tsp_solver.CrusherImpl(current_task)
+		fmt.Println("SolveTask: *3")
 		if sub_task_info.Enabled {
-			stack = append(stack, &sub_task_info.Task1)
-			stack = append(stack, &sub_task_info.Task2)
+			stack = append(stack, sub_task_info.Task1)
+			stack = append(stack, sub_task_info.Task2)
 		} else {
 			break
 		}
+		fmt.Println("SolveTask: *4")
 	}
-	ch_logs <- "SolveTask: 13"
+	fmt.Println("SolveTask: 13")
 	// set to queue
 	for i := 0; i < len(stack); i++ {
 		tasks_queue <- ClientTask{client, stack[i], false}

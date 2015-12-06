@@ -38,7 +38,7 @@ def serialize_task(matrix):
     matrix_element.text = ' '.join((str(val) for val in matrix))
     root.append(matrix_element)
 
-    xml = etree.tostring(root, pretty_print=True, xml_declaration=True)
+    xml = etree.tostring(root, pretty_print=True, xml_declaration=True, encoding="utf-8")
     print(xml.decode())
     return xml
 

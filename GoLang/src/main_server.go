@@ -155,7 +155,7 @@ func server_thread(wg_server *sync.WaitGroup) {
 	go accept_workers(workers_list, listener, &wg_workers_accept)
 
 	// listen clients
-	laddr, err = net.ResolveTCPAddr("tcp", "127.0.0.1:5001")
+	laddr, err = net.ResolveTCPAddr("tcp", "127.0.0.1:6000")
 	if nil != err {
 		str := fmt.Sprintf("ResolveTCPAddr error: %v\n", err)
 		ch_logs <- str
@@ -210,10 +210,10 @@ func accept_clients(clients_list *list.List, listener *net.TCPListener, wg *sync
 			}
 		}
 		client := tsp_task_manager.ClientInfo{new_client_id, &conn}
-		clients_list.PushBack(client)
-		ch_logs <- ("I'm accept client #"+strconv.Itoa(new_client_id))
-		go listen_client(client)
 		new_client_id++
+		clients_list.PushBack(client)
+		ch_logs <- ("I'm accept client #"+strconv.Itoa(client.ID))
+		go listen_client(client)
 	}
 }
 
@@ -248,15 +248,16 @@ func accept_workers(workers_list *list.List, listener *net.TCPListener, wg *sync
 //func listen_client(client tsp_task_manager.ClientInfo, worker_list *list.List) {
 func listen_client(client tsp_task_manager.ClientInfo) {
 	for {
-		bufr := bufio.NewReader(*client.Conn)
-		line, err := bufr.ReadSlice('\000')
+		line := make([]byte, 4096)
+		actual_size , err := (*client.Conn).Read(line)
 		if err != nil {
 			str := fmt.Sprintf("Reading data error: %v", err)
 			ch_logs <- str
 			return
 		}
-		ch_logs <- ("listen_client: receive task " + string(line))
-		go tsp_task_manager.SolveTask(client, line, ch_logs)
+		actual_line := line[:actual_size]
+		ch_logs <- ("listen_client: receive task " + string(actual_line))
+		go tsp_task_manager.SolveTask(client, actual_line, ch_logs)
 		/*
 		if string(line) == "quit" {
 			for e := worker_list.Front(); e != nil; e = e.Next() {

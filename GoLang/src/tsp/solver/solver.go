@@ -327,10 +327,11 @@ func SolveImpl(task tsp_types.TaskType) tsp_types.AnswerType {
 	}
 }
 
-func CrusherImpl(task tsp_types.TaskType) tsp_types.DivTaskType {
+func CrusherImpl(task *tsp_types.TaskType) tsp_types.DivTaskType {
+	fmt.Println("[CrusherImpl] size : %d, matrix size %d", task.Size, len(task.Matrix))
 	success, additional_cost := calculate_additional_cost_and_correct_matrix(task.Matrix, task.Size)
 	if success != true {
-		return tsp_types.DivTaskType{false, tsp_types.ERROR_TASK, tsp_types.ERROR_TASK}
+		return tsp_types.DivTaskType{false, nil, nil}
 	}
 	task.SolutionCost += additional_cost
 	var zero_with_most_weight tsp_types.ZeroInfoType = find_zero_with_biggest_weight(task.Matrix, task.Size)
@@ -339,5 +340,5 @@ func CrusherImpl(task tsp_types.TaskType) tsp_types.DivTaskType {
 	//call this function recursively
 	task1 := tsp_types.TaskType{sub_dt.Matrix, sub_dt.XMapping, sub_dt.YMapping, sub_dt.Jumps, task.SolutionCost, task.MinCost, task.Size - 1}
 	task.Matrix[zero_with_most_weight.Row*task.Size+zero_with_most_weight.Col] = tsp_types.POSITIVE_INF
-	return tsp_types.DivTaskType{true, task1, task}
+	return tsp_types.DivTaskType{true, &task1, task}
 }

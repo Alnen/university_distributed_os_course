@@ -9,14 +9,14 @@ import (
 
 type (
 	TaskXML struct {
-		XMLName      xml.Name  "xml:'task'"
-		Size  int "xml:'size'"
-		Matrix string "xml:'matrix'"
+		XMLName  xml.Name  `xml:"task"`
+		Size  	 int       `xml:"size"`
+		Matrix   string    `xml:"matrix"`
 	}
 	AnswerXML struct {
-		XMLName xml.Name "xml:'answer'"
-		Cost    int      "xml:'cost'"
-		Jumps   string   "xml:'jumps'"
+		XMLName xml.Name `xml:"answer"`
+		Cost    int      `xml:"cost"`
+		Jumps   string   `xml:"jumps"`
 	}
 )
 
@@ -57,8 +57,8 @@ type (
 	}
 	DivTaskType struct {
 		Enabled bool
-		Task1   TaskType
-		Task2   TaskType
+		Task1   *TaskType
+		Task2   *TaskType
 	}
 )
 
@@ -81,7 +81,7 @@ var (
 	}
 )
 
-func (answer AnswerType) ToXml() []byte {
+func (answer *AnswerType) ToXml() []byte {
 	xml_answer := &AnswerXML{Cost: int(answer.Cost), Jumps: JumpTypeArrayToString(answer.Jumps)}
 	xml_string, err := xml.MarshalIndent(xml_answer, "", "")
 	if err != nil {
@@ -91,7 +91,7 @@ func (answer AnswerType) ToXml() []byte {
 	return xml_string
 }
 
-func (answer AnswerType) FromXml(data []byte) {
+func (answer *AnswerType) FromXml(data []byte) {
 	xml_answer := AnswerXML{}
 	err := xml.Unmarshal(data, &xml_answer)
 	if err != nil {
@@ -102,7 +102,7 @@ func (answer AnswerType) FromXml(data []byte) {
 	answer.Jumps = JumpTypeArrayFromString(xml_answer.Jumps)
 }
 
-func (answer AnswerType) ToString() string {
+func (answer *AnswerType) ToString() string {
 	str_data := strconv.Itoa(int(answer.Cost))
 	for i := 0; i < len(answer.Jumps); i++ {
 		str_data += " " + strconv.Itoa(answer.Jumps[i].Source)
@@ -111,7 +111,7 @@ func (answer AnswerType) ToString() string {
 	return str_data
 }
 
-func (answer AnswerType) FromString(data string) {
+func (answer *AnswerType) FromString(data string) {
 	data_vec := strings.Split(data, " ")
 	vec_size := len(data_vec)
 	if vec_size < 1 {
@@ -129,7 +129,7 @@ func (answer AnswerType) FromString(data string) {
 	answer.Cost = DataType(cost)
 }
 
-func (task TaskType) ToXml() []byte {
+func (task *TaskType) ToXml() []byte {
 	xml_task := &TaskXML{Size: task.Size, Matrix: task.Matrix.ToString()}
 	xml_string, err := xml.MarshalIndent(xml_task, "", "")
 	if err != nil {
@@ -139,23 +139,36 @@ func (task TaskType) ToXml() []byte {
 	return xml_string
 }
 
-func (task TaskType) FromXml(data []byte) {
+func (task *TaskType) FromXml(data []byte) {
 	xml_task := TaskXML{}
+	fmt.Printf("BEFOR UNMARSHAL\n")
 	err := xml.Unmarshal(data, &xml_task)
+	fmt.Println("AFTER  UNMARSHAL", xml_task.Size)
 	if err != nil {
 		fmt.Printf("error: %v", err)
 		return
 	}
-	matrix := MatrixType{}
+	fmt.Printf("1\n")
+	matrix := make(MatrixType, xml_task.Size*xml_task.Size)
+	fmt.Printf("2\n")
 	matrix.FromString(xml_task.Matrix, xml_task.Size)
+	fmt.Printf("2\n")
 	mapping := make([]int, xml_task.Size)
 	for i := 0; i < xml_task.Size; i++ {
 		mapping[i] = i
 	}
-	task = TaskType{matrix, mapping, mapping, []JumpType{}, DataType(0), DataType(POSITIVE_INF), xml_task.Size}
+	fmt.Printf("3\n")
+	task.Matrix = matrix
+	task.XMapping = mapping
+	task.YMapping = mapping
+	task.Jumps = []JumpType{}
+	task.SolutionCost = DataType(0)
+	task.MinCost = DataType(POSITIVE_INF)
+	task.Size = xml_task.Size
+	fmt.Println("4", task.Size, len(task.Matrix))
 }
 
-func (task TaskType) ToString() string {
+func (task *TaskType) ToString() string {
 	size := task.Size
 	str_data := strconv.Itoa(size)
 	for i := 0; i < size*size; i++ {
@@ -178,7 +191,7 @@ func (task TaskType) ToString() string {
 	return str_data
 }
 
-func (task TaskType) FromString(data string) {
+func (task *TaskType) FromString(data string) {
 	data_vec := strings.Split(data, " ")
 	vec_size := len(data_vec)
 	if vec_size < 4 {
@@ -212,35 +225,40 @@ func (task TaskType) FromString(data string) {
 		jumps[j].Destination, _ = strconv.Atoi(data_vec[i+1])
 		j++
 	}
-	task = TaskType{matrix, x_mapping, y_mapping, jumps, DataType(solution_cost), DataType(min_cost), size}
+	task.Matrix = matrix
+	task.XMapping = x_mapping
+	task.YMapping = y_mapping
+	task.Jumps = jumps
+	task.SolutionCost = DataType(solution_cost)
+	task.MinCost = DataType(min_cost)
+	task.Size = size
 }
 
-func (matrix MatrixType) ToString() string {
+func (matrix *MatrixType) ToString() string {
 	str_data := ""
-	for i := 0; i < len(matrix); i++ {
+	for i := 0; i < len(*matrix); i++ {
 		if i > 0 {
 			str_data += " "
 		}
-		if matrix[i] == POSITIVE_INF {
+		if (*matrix)[i] == POSITIVE_INF {
 			str_data += "INF"
 		} else {
-			str_data += strconv.Itoa(int(matrix[i]))
+			str_data += strconv.Itoa(int((*matrix)[i]))
 		}
 	}
 	return str_data
 }
 
-func (matrix MatrixType) FromString(str string, size int) {
+func (matrix *MatrixType) FromString(str string, size int) {
 	str_vec := strings.Split(str, " ")
-	matrix = make(MatrixType, size*size)
 	var val int
 	for i := 0; i < size; i++ {
 		for j := 0; j < size; j++ {
 			if str_vec[i*size+j] == "INF" {
-				matrix[i*size+j] = POSITIVE_INF
+				(*matrix)[i*size+j] = POSITIVE_INF
 			} else {
 				val, _ = strconv.Atoi(str_vec[i*size+j])
-				matrix[i*size+j] = DataType(val)
+				(*matrix)[i*size+j] = DataType(val)
 			}
 		}
 	}
