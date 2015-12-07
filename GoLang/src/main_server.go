@@ -13,8 +13,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
-	tsp_types "tsp/types"
 	tsp_task_manager "tsp/task_manager"
+	tsp_types "tsp/types"
 )
 
 type (
@@ -132,7 +132,7 @@ func server_thread(wg_server *sync.WaitGroup) {
 	ch_logs <- "Launching server..."
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	ch_input_messages = make(chan MessageType, worker_count)
-	go tsp_task_manager.CreateTaskManager()
+	tsp_task_manager.CreateTaskManager()
 
 	// listen workers
 	laddr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:5000")
@@ -212,7 +212,7 @@ func accept_clients(clients_list *list.List, listener *net.TCPListener, wg *sync
 		client := tsp_task_manager.ClientInfo{new_client_id, &conn}
 		new_client_id++
 		clients_list.PushBack(client)
-		ch_logs <- ("I'm accept client #"+strconv.Itoa(client.ID))
+		ch_logs <- ("I'm accept client #" + strconv.Itoa(client.ID))
 		go listen_client(client)
 	}
 }
@@ -239,7 +239,8 @@ func accept_workers(workers_list *list.List, listener *net.TCPListener, wg *sync
 		}
 		worker := tsp_task_manager.WorkerInfo{new_worker_id, &conn, nil}
 		workers_list.PushBack(worker)
-		ch_logs <- ("I'm accept worker #"+strconv.Itoa(new_worker_id))
+		tsp_task_manager.AddFreeWorker(worker)
+		ch_logs <- ("I'm accept worker #" + strconv.Itoa(new_worker_id))
 		go listen_worker(worker)
 		new_worker_id++
 	}
@@ -249,26 +250,26 @@ func accept_workers(workers_list *list.List, listener *net.TCPListener, wg *sync
 func listen_client(client tsp_task_manager.ClientInfo) {
 	for {
 		line := make([]byte, 4096)
-		actual_size , err := (*client.Conn).Read(line)
+		actual_size, err := (*client.Conn).Read(line)
 		if err != nil {
 			str := fmt.Sprintf("Reading data error: %v", err)
 			ch_logs <- str
 			return
 		}
 		actual_line := line[:actual_size]
-		ch_logs <- ("listen_client: receive task " + string(actual_line))
+		//ch_logs <- ("listen_client: receive task " + string(actual_line))
 		go tsp_task_manager.SolveTask(client, actual_line, ch_logs)
 		/*
-		if string(line) == "quit" {
-			for e := worker_list.Front(); e != nil; e = e.Next() {
-				worker := e.Value.(WorkerInfo)
-				if client.ID == worker.CurrentTask.Client.ID {
-					//worker.CurrentTask.Client = Conn
+			if string(line) == "quit" {
+				for e := worker_list.Front(); e != nil; e = e.Next() {
+					worker := e.Value.(WorkerInfo)
+					if client.ID == worker.CurrentTask.Client.ID {
+						//worker.CurrentTask.Client = Conn
+					}
 				}
+			} else {
+				tsp_task_manager.AddNewTask(client, line)
 			}
-		} else {
-			tsp_task_manager.AddNewTask(client, line)
-		}
 		*/
 	}
 }
@@ -282,15 +283,17 @@ func listen_worker(worker tsp_task_manager.WorkerInfo) {
 			ch_logs <- str
 			return
 		}
-		ch_logs <- ("listen_worker: receive answer" + string(line))
+		//ch_logs <- ("listen_worker: receive answer" + string(line))
 		// write answer
-		(*worker.CurrentTask.Client.Conn).Write(line)
+		tsp_task_manager.ProcessingAnswer(line)
+		tsp_task_manager.AddFreeWorker(worker)
+		//(*worker.CurrentTask.Client.Conn).Write(line)
 		/*
-		if string(line) == "quit" {
-			tsp_task_manager.tasks_queue <- worker.CurrentTask
-		} else {
-			worker.CurrentTask.Client.Conn.Write([]byte("Connection is accepted\000"))
-		}
+			if string(line) == "quit" {
+				tsp_task_manager.tasks_queue <- worker.CurrentTask
+			} else {
+				worker.CurrentTask.Client.Conn.Write([]byte("Connection is accepted\000"))
+			}
 		*/
 	}
 }

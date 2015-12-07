@@ -9,9 +9,9 @@ import (
 
 type (
 	TaskXML struct {
-		XMLName  xml.Name  `xml:"task"`
-		Size  	 int       `xml:"size"`
-		Matrix   string    `xml:"matrix"`
+		XMLName xml.Name `xml:"task"`
+		Size    int      `xml:"size"`
+		Matrix  string   `xml:"matrix"`
 	}
 	AnswerXML struct {
 		XMLName xml.Name `xml:"answer"`
@@ -141,31 +141,31 @@ func (task *TaskType) ToXml() []byte {
 
 func (task *TaskType) FromXml(data []byte) {
 	xml_task := TaskXML{}
-	fmt.Printf("BEFOR UNMARSHAL\n")
+	//fmt.Printf("BEFOR UNMARSHAL\n")
 	err := xml.Unmarshal(data, &xml_task)
-	fmt.Println("AFTER  UNMARSHAL", xml_task.Size)
+	//fmt.Println("AFTER  UNMARSHAL", xml_task.Size)
 	if err != nil {
 		fmt.Printf("error: %v", err)
 		return
 	}
-	fmt.Printf("1\n")
+	//fmt.Printf("1\n")
 	matrix := make(MatrixType, xml_task.Size*xml_task.Size)
-	fmt.Printf("2\n")
+	//fmt.Printf("2\n")
 	matrix.FromString(xml_task.Matrix, xml_task.Size)
-	fmt.Printf("2\n")
+	//fmt.Printf("2\n")
 	mapping := make([]int, xml_task.Size)
 	for i := 0; i < xml_task.Size; i++ {
 		mapping[i] = i
 	}
-	fmt.Printf("3\n")
+	//fmt.Printf("3\n")
 	task.Matrix = matrix
 	task.XMapping = mapping
 	task.YMapping = mapping
-	task.Jumps = []JumpType{}
+	task.Jumps = nil
 	task.SolutionCost = DataType(0)
 	task.MinCost = DataType(POSITIVE_INF)
 	task.Size = xml_task.Size
-	fmt.Println("4", task.Size, len(task.Matrix))
+	//fmt.Println("4", task.Size, len(task.Matrix))
 }
 
 func (task *TaskType) ToString() string {
@@ -232,6 +232,15 @@ func (task *TaskType) FromString(data string) {
 	task.SolutionCost = DataType(solution_cost)
 	task.MinCost = DataType(min_cost)
 	task.Size = size
+	/*
+		fmt.Println("Matrix size: ", len(task.Matrix))
+		fmt.Println("XMapping size: ", len(task.XMapping))
+		fmt.Println("YMapping size: ", len(task.YMapping))
+		fmt.Printf("Jumps: %v\n", task.Jumps)
+		fmt.Println("Solution_cost: ", int(task.SolutionCost))
+		fmt.Println("MinCost: ", int(task.MinCost))
+		fmt.Println("Size: ", task.Size)
+	*/
 }
 
 func (matrix *MatrixType) ToString() string {
@@ -240,11 +249,7 @@ func (matrix *MatrixType) ToString() string {
 		if i > 0 {
 			str_data += " "
 		}
-		if (*matrix)[i] == POSITIVE_INF {
-			str_data += "INF"
-		} else {
-			str_data += strconv.Itoa(int((*matrix)[i]))
-		}
+		str_data += strconv.Itoa(int((*matrix)[i]))
 	}
 	return str_data
 }
@@ -254,12 +259,8 @@ func (matrix *MatrixType) FromString(str string, size int) {
 	var val int
 	for i := 0; i < size; i++ {
 		for j := 0; j < size; j++ {
-			if str_vec[i*size+j] == "INF" {
-				(*matrix)[i*size+j] = POSITIVE_INF
-			} else {
-				val, _ = strconv.Atoi(str_vec[i*size+j])
-				(*matrix)[i*size+j] = DataType(val)
-			}
+			val, _ = strconv.Atoi(str_vec[i*size+j])
+			(*matrix)[i*size+j] = DataType(val)
 		}
 	}
 }

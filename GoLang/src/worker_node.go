@@ -2,28 +2,21 @@ package main
 
 import (
 	"bufio"
+	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
-	"fmt"
 	"strconv"
-	"io"
 	"sync"
-	tsp_types "tsp/types"
 	tsp_solver "tsp/solver"
+	tsp_types "tsp/types"
 )
 
 type WorkerCmdType int
 
-const (
-	CMD_SOLVE_NEW_TASK WorkerCmdType = iota
-	CMD_QUIT                         = iota
-)
-
 var (
 	ch_logs chan string
-	ch_cmd    chan WorkerCmdType
-	curr_task string
 )
 
 func log_thread(writerHandle io.Writer, ch_stop_logging chan bool, wg_logger *sync.WaitGroup) {
@@ -41,6 +34,8 @@ func log_thread(writerHandle io.Writer, ch_stop_logging chan bool, wg_logger *sy
 	}
 }
 
+var answer_count int = 0
+
 func listen_server(conn *net.Conn) {
 	for {
 		bufr := bufio.NewReader(*conn)
@@ -52,13 +47,34 @@ func listen_server(conn *net.Conn) {
 		}
 		switch cmd {
 		case "QUIT":
-			ch_cmd <- CMD_QUIT
 			return
 		default:
-			curr_task = cmd
-			ch_cmd <- CMD_SOLVE_NEW_TASK
+			//fmt.Println("NEW TASK RECEIVE ...")
+			task := tsp_types.TaskType{}
+			task.FromString(cmd)
+			//fmt.Println("Task size: ", task.Size, " matrix: ", len(task.Matrix))
+			/*
+				for i := 0; i < len(task.Matrix); i++ {
+					fmt.Printf(" %d",int(task.Matrix[i]))
+				}
+				fmt.Println("")
+			*/
+			task.MinCost = tsp_types.POSITIVE_INF
+			task.SolutionCost = 0
+			answer := tsp_solver.SolveImpl(task)
+			//fmt.Println("Answer: ", answer.Cost, " Jumps:", len(answer.Jumps))
+			/*
+				for i := 0; i < len(answer.Jumps); i++ {
+					fmt.Printf(" %d-%d", answer.Jumps[i].Source, answer.Jumps[i].Destination)
+				}
+			*/
+			//fmt.Println("Send: " + answer.ToString())
+			(*conn).Write([]byte(answer.ToString() + "\000"))
+			fmt.Println("Calc answer (", answer_count, "): ", answer.Cost)
+			answer_count++
 		}
 	}
+	defer (*conn).Close()
 }
 
 func start_worker() {
@@ -71,28 +87,11 @@ func start_worker() {
 		ch_logs <- str
 	}
 	go listen_server(&conn)
-	for {
-		cmd := <-ch_cmd
-		switch cmd {
-		case CMD_QUIT:
-			return
-		case CMD_SOLVE_NEW_TASK:
-			//read task
-			task := tsp_types.TaskType{}
-			task.FromString(curr_task)
-			//do it
-			answer := tsp_solver.SolveImpl(task)
-			conn.Write([]byte(answer.ToString()+"\000"))
-			// DO NEW TASK (curr task)
-			// conn.Write([]byte("Task Answer\000"))
-		}
-	}
-	defer conn.Close()
 }
 
 func main() {
 	if len(os.Args) > 1 {
-		worker_count, err := strconv.Atoi(os.Args[1]);
+		worker_count, err := strconv.Atoi(os.Args[1])
 		if err != nil {
 			fmt.Printf("Command Arg Error: %v\n", err)
 		}
@@ -102,8 +101,8 @@ func main() {
 		ch_stop_logging := make(chan bool)
 		wg_logger.Add(1)
 		go log_thread(os.Stdout, ch_stop_logging, &wg_logger)
-		for i:= 0; i < worker_count; i++ {
-			go start_worker();
+		for i := 0; i < worker_count; i++ {
+			go start_worker()
 		}
 		var line string
 		for {
@@ -114,7 +113,6 @@ func main() {
 			}
 			switch line {
 			case "quit":
-				ch_cmd <- CMD_QUIT
 				ch_stop_logging <- true
 				wg_logger.Wait()
 				fmt.Println("QUIT")

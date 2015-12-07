@@ -268,7 +268,10 @@ func generate_sub_task_data(matrix tsp_types.MatrixType, x_mapping []int, y_mapp
 }
 
 func SolveImpl(task tsp_types.TaskType) tsp_types.AnswerType {
-//func SolveImpl(matrix tsp_types.MatrixType, x_mapping []int, y_mapping []int, all_jumps []tsp_types.JumpType, solution_cost tsp_types.DataType, min_cost tsp_types.DataType, n int) tsp_types.AnswerType {
+	//fmt.Println("[SolveImpl] Task size: ", task.Size," matrix size: ",len(task.Matrix))
+	//fmt.Printf("[SolveImpl] Task x mapping: %v\n", task.XMapping)
+	//fmt.Printf("[SolveImpl] Task y mapping: %v\n", task.YMapping)
+	//fmt.Printf("[SolveImpl] Task jumps: %v\n", task.Jumps)
 	branch_count++
 	if task.Size == 0 || task.Size == 1 {
 		return tsp_types.ERROR_ANSWER
@@ -294,18 +297,21 @@ func SolveImpl(task tsp_types.TaskType) tsp_types.AnswerType {
 			for j := range task.Jumps {
 				jumps = append(jumps, task.Jumps[j])
 			}
+			//fmt.Println("SOLUTION COST: ", int(task.SolutionCost))
 			return tsp_types.AnswerType{jumps, task.SolutionCost}
 		} else {
+			//fmt.Println("tsp_types.ERROR_ANSWER 1")
 			return tsp_types.ERROR_ANSWER
 		}
 	}
 	// prepare data for recursive call
 	sub_dt := generate_sub_task_data(task.Matrix, task.XMapping, task.YMapping, task.Jumps, zero_with_most_weight, task.Size)
 	//call this function recursively
-	answer = SolveImpl(tsp_types.TaskType{sub_dt.Matrix, sub_dt.XMapping, sub_dt.YMapping, sub_dt.Jumps, task.SolutionCost, task.MinCost, task.Size-1})
+	answer = SolveImpl(tsp_types.TaskType{sub_dt.Matrix, sub_dt.XMapping, sub_dt.YMapping, sub_dt.Jumps, task.SolutionCost, task.MinCost, task.Size - 1})
 	//print_answer(answer, "GOT ANSWER")
 	final_path := []tsp_types.JumpType{}
 	if answer.Cost < task.MinCost {
+		//fmt.Printf("[SolveImpl] AnswerJumps: %v\n", answer.Jumps)
 		final_path = answer.Jumps
 		task.MinCost = answer.Cost
 	}
@@ -321,14 +327,16 @@ func SolveImpl(task tsp_types.TaskType) tsp_types.AnswerType {
 	}
 	// return answer
 	if task.MinCost < tsp_types.POSITIVE_INF {
+		//fmt.Printf("[SolveImpl] %i | %v\n", int(task.SolutionCost), final_path)
 		return tsp_types.AnswerType{final_path, task.MinCost}
 	} else {
+		//fmt.Println("[SolveImpl] ERROR_ANSWER")
 		return tsp_types.ERROR_ANSWER
 	}
 }
 
 func CrusherImpl(task *tsp_types.TaskType) tsp_types.DivTaskType {
-	fmt.Println("[CrusherImpl] size : %d, matrix size %d", task.Size, len(task.Matrix))
+	//fmt.Println("[CrusherImpl] size : %d, matrix size %d", task.Size, len(task.Matrix))
 	success, additional_cost := calculate_additional_cost_and_correct_matrix(task.Matrix, task.Size)
 	if success != true {
 		return tsp_types.DivTaskType{false, nil, nil}
