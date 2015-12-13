@@ -1,7 +1,7 @@
 package main
 
 import (
-	"bufio"
+	//"bufio"
 	"fmt"
 	"io"
 	"log"
@@ -9,8 +9,8 @@ import (
 	"os"
 	"strconv"
 	"sync"
-	tsp_solver "tsp/solver"
-	tsp_types "tsp/types"
+	tsp_solver "tsp_test/tsp/solver"
+	tsp_types "tsp_test/tsp/types"
 )
 
 type WorkerCmdType int
@@ -36,32 +36,41 @@ func log_thread(writerHandle io.Writer, ch_stop_logging chan bool, wg_logger *sy
 
 var answer_count int = 0
 
+func print_matrix(task *tsp_types.TaskType) {
+	fmt.Println("---------- MATRIX ---------")
+	for i := 0; i < task.Size; i++ {
+		for j := 0; j < task.Size; j++ {
+			fmt.Printf("%11d",int((*task.Matrix)[i*task.Size+j]))
+		}
+		fmt.Printf("\n")
+	}
+	fmt.Println("---------------------------")
+}
+
 func listen_server(conn *net.Conn) {
 	for {
-		bufr := bufio.NewReader(*conn)
-		cmd, err := bufr.ReadString('\000')
+		line := make([]byte, 4096)
+		actual_size, err := (*conn).Read(line)
 		if err != nil {
 			str := fmt.Sprintf("reading error: %v", err)
 			ch_logs <- str
 			return
 		}
+		cmd := string(line[:actual_size])
 		switch cmd {
 		case "QUIT":
 			return
 		default:
 			//fmt.Println("NEW TASK RECEIVE ...")
-			task := tsp_types.TaskType{}
+			task := &tsp_types.TaskType{}
 			task.FromString(cmd)
-			//fmt.Println("Task size: ", task.Size, " matrix: ", len(task.Matrix))
-			/*
-				for i := 0; i < len(task.Matrix); i++ {
-					fmt.Printf(" %d",int(task.Matrix[i]))
-				}
-				fmt.Println("")
-			*/
-			task.MinCost = tsp_types.POSITIVE_INF
-			task.SolutionCost = 0
-			answer := tsp_solver.SolveImpl(task)
+			fmt.Println("Task size: ", task.Size, " matrix: ", len(*task.Matrix))
+			print_matrix(task)
+			//task.MinCost = tsp_types.POSITIVE_INF
+			//task.CurrCost = tsp_types.DataType(0)
+			answer_count++
+			fmt.Printf("Calc answer (%d) ... ", answer_count)
+			answer := tsp_solver.SolveImpl(*task)
 			//fmt.Println("Answer: ", answer.Cost, " Jumps:", len(answer.Jumps))
 			/*
 				for i := 0; i < len(answer.Jumps); i++ {
@@ -69,9 +78,9 @@ func listen_server(conn *net.Conn) {
 				}
 			*/
 			//fmt.Println("Send: " + answer.ToString())
-			(*conn).Write([]byte(answer.ToString() + "\000"))
-			fmt.Println("Calc answer (", answer_count, "): ", answer.Cost)
-			answer_count++
+			fmt.Printf("%d ... ", answer.Cost)
+			(*conn).Write([]byte(answer.ToString()))
+			fmt.Printf("sent\n")
 		}
 	}
 	defer (*conn).Close()

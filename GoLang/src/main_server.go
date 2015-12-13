@@ -2,7 +2,7 @@ package main
 
 import (
 	//tsp_solver "tsp_service/tsp/solver"
-	"bufio"
+	//"bufio"
 	"container/list"
 	"fmt"
 	"io"
@@ -13,8 +13,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
-	tsp_task_manager "tsp/task_manager"
-	tsp_types "tsp/types"
+	tsp_task_manager "tsp_test/tsp/task_manager"
+	tsp_types "tsp_test/tsp/types"
 )
 
 type (
@@ -175,6 +175,7 @@ func server_thread(wg_server *sync.WaitGroup) {
 	go accept_clients(clients_list, listener, &wg_clients_accept)
 
 	ch_logs <- "Server work is started"
+
 	// listen commands
 	for {
 		cmd := <-ch_cmd
@@ -258,7 +259,9 @@ func listen_client(client tsp_task_manager.ClientInfo) {
 		}
 		actual_line := line[:actual_size]
 		//ch_logs <- ("listen_client: receive task " + string(actual_line))
-		go tsp_task_manager.SolveTask(client, actual_line, ch_logs)
+		go tsp_task_manager.SolveTask(client, actual_line)
+		final_answer := <-tsp_task_manager.CurrTask.FinalAnswer
+		fmt.Printf("[listen_client] Final Answer: (cost: %d, jumps: %v\n", final_answer.Cost, final_answer.Jumps)
 		/*
 			if string(line) == "quit" {
 				for e := worker_list.Front(); e != nil; e = e.Next() {
@@ -276,16 +279,17 @@ func listen_client(client tsp_task_manager.ClientInfo) {
 
 func listen_worker(worker tsp_task_manager.WorkerInfo) {
 	for {
-		bufr := bufio.NewReader(*worker.Conn)
-		line, err := bufr.ReadSlice('\000')
+		line := make([]byte, 4096)
+		actual_size, err := (*worker.Conn).Read(line)
 		if err != nil {
 			str := fmt.Sprintf("Reading data error: %v", err)
 			ch_logs <- str
 			return
 		}
+		line = line[:actual_size]
 		//ch_logs <- ("listen_worker: receive answer" + string(line))
 		// write answer
-		tsp_task_manager.ProcessingAnswer(line)
+		tsp_task_manager.AnswerHandler(line)
 		tsp_task_manager.AddFreeWorker(worker)
 		//(*worker.CurrentTask.Client.Conn).Write(line)
 		/*

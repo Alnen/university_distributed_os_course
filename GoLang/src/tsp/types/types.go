@@ -32,9 +32,9 @@ type (
 		Source, Destination int
 	}
 	SubTaskDataType struct {
-		Matrix   MatrixType
-		XMapping []int
-		YMapping []int
+		Matrix   *MatrixType
+		RowMapping []int
+		ColMapping []int
 		Jumps    []JumpType
 	}
 	AnswerType struct {
@@ -42,23 +42,18 @@ type (
 		Cost  DataType
 	}
 	DataTaskType struct {
-		Matrix   MatrixType
-		XMapping []int
-		YMapping []int
+		Matrix   *MatrixType
+		RowMapping []int
+		ColMapping []int
 		Size     int
 	}
 	TaskType struct {
-		Matrix                MatrixType
-		XMapping              []int
-		YMapping              []int
+		Matrix                *MatrixType
+		RowMapping []int
+		ColMapping []int
 		Jumps                 []JumpType
-		SolutionCost, MinCost DataType
+		CurrCost, MinCost DataType
 		Size                  int
-	}
-	DivTaskType struct {
-		Enabled bool
-		Task1   *TaskType
-		Task2   *TaskType
 	}
 )
 
@@ -76,7 +71,7 @@ var (
 		POSITIVE_INF,
 	}
 	ERROR_TASK TaskType = TaskType{
-		MatrixType{}, []int{}, []int{},
+		&MatrixType{}, []int{}, []int{},
 		[]JumpType{}, 0, 0, 0,
 	}
 )
@@ -158,11 +153,11 @@ func (task *TaskType) FromXml(data []byte) {
 		mapping[i] = i
 	}
 	//fmt.Printf("3\n")
-	task.Matrix = matrix
-	task.XMapping = mapping
-	task.YMapping = mapping
+	task.Matrix = &matrix
+	task.RowMapping = mapping
+	task.ColMapping = mapping
 	task.Jumps = nil
-	task.SolutionCost = DataType(0)
+	task.CurrCost = DataType(0)
 	task.MinCost = DataType(POSITIVE_INF)
 	task.Size = xml_task.Size
 	//fmt.Println("4", task.Size, len(task.Matrix))
@@ -171,14 +166,15 @@ func (task *TaskType) FromXml(data []byte) {
 func (task *TaskType) ToString() string {
 	size := task.Size
 	str_data := strconv.Itoa(size)
+	matrix := *task.Matrix
 	for i := 0; i < size*size; i++ {
-		str_data += " " + strconv.Itoa(int(task.Matrix[i]))
+		str_data += " " + strconv.Itoa(int(matrix[i]))
 	}
 	for i := 0; i < size; i++ {
-		str_data += " " + strconv.Itoa(int(task.XMapping[i]))
+		str_data += " " + strconv.Itoa(int(task.RowMapping[i]))
 	}
 	for i := 0; i < size; i++ {
-		str_data += " " + strconv.Itoa(int(task.YMapping[i]))
+		str_data += " " + strconv.Itoa(int(task.ColMapping[i]))
 	}
 	jump_size := len(task.Jumps)
 	str_data += " " + strconv.Itoa(jump_size)
@@ -186,7 +182,7 @@ func (task *TaskType) ToString() string {
 		str_data += " " + strconv.Itoa(int(task.Jumps[i].Source))
 		str_data += " " + strconv.Itoa(int(task.Jumps[i].Destination))
 	}
-	str_data += " " + strconv.Itoa(int(task.SolutionCost))
+	str_data += " " + strconv.Itoa(int(task.CurrCost))
 	str_data += " " + strconv.Itoa(int(task.MinCost))
 	return str_data
 }
@@ -199,37 +195,48 @@ func (task *TaskType) FromString(data string) {
 	}
 	size, _ := strconv.Atoi(data_vec[0])
 	matrix := make(MatrixType, size*size)
-	x_mapping := make([]int, size)
-	y_mapping := make([]int, size)
+	row_mapping := make([]int, size)
+	col_mapping := make([]int, size)
 	jumps_len, _ := strconv.Atoi(data_vec[1+(size+2)*size])
 	jumps := make([]JumpType, jumps_len)
-	solution_cost, _ := strconv.Atoi(data_vec[vec_size-2])
-	min_cost, _ := strconv.Atoi(data_vec[vec_size-1])
+	curr_cost, err := strconv.Atoi(data_vec[vec_size-2])
+	if err != nil {
+		fmt.Printf("task.FromString curr_cost error: %v\n", err)
+	}
+	min_cost, err := strconv.Atoi(data_vec[vec_size-1])
+	if err != nil {
+		fmt.Printf("task.FromString min_cost error: %v\n", err)
+	}
 	offset := 1
-	for i := offset; i < offset+size*size; i++ {
+	for i := offset; i < offset + size*size; i++ {
 		matrix_value, _ := strconv.Atoi(data_vec[i])
 		matrix[i-offset] = DataType(matrix_value)
 	}
 	offset = offset + size*size
-	for i := offset; i < offset+size; i++ {
-		x_mapping[i-offset], _ = strconv.Atoi(data_vec[i])
+	for i := offset; i < offset + size; i++ {
+		row_mapping[i-offset], _ = strconv.Atoi(data_vec[i])
 	}
 	offset = offset + size
-	for i := offset; i < offset+size; i++ {
-		y_mapping[i-offset], _ = strconv.Atoi(data_vec[i])
+	for i := offset; i < offset + size; i++ {
+		col_mapping[i-offset], _ = strconv.Atoi(data_vec[i])
 	}
-	offset = offset + size
+	offset = offset + size + 1
 	j := 0
-	for i := offset; i < offset+jumps_len*2; i += 2 {
+	for i := offset; i < offset + jumps_len*2; i += 2 {
 		jumps[j].Source, _ = strconv.Atoi(data_vec[i])
 		jumps[j].Destination, _ = strconv.Atoi(data_vec[i+1])
 		j++
 	}
-	task.Matrix = matrix
-	task.XMapping = x_mapping
-	task.YMapping = y_mapping
+	//fmt.Printf("[FromString] row_mapping: %v\n", row_mapping)
+	//fmt.Printf("[FromString] col_mapping: %v\n", row_mapping)
+	fmt.Printf("[FromString] Jumps: %v\n", jumps)
+	fmt.Printf("[FromString] CurrCost: %d\n", curr_cost)
+	fmt.Printf("[FromString] MinCost: %d\n", min_cost)
+	task.Matrix = &matrix
+	task.RowMapping = row_mapping
+	task.ColMapping = col_mapping
 	task.Jumps = jumps
-	task.SolutionCost = DataType(solution_cost)
+	task.CurrCost = DataType(curr_cost)
 	task.MinCost = DataType(min_cost)
 	task.Size = size
 	/*
