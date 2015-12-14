@@ -5,6 +5,7 @@ import time
 import math
 import random
 import numpy as np
+from struct import *
 
 from lxml import etree
 
@@ -63,7 +64,9 @@ class Client:
         task_binary = serialize_task(task)
         s.send(task_binary)
         self.log.info("[CLIENT] Sending task done. Trying to receive answer...")
-        response = s.recv(4096)
+        str_size = s.recv(8)
+        int_size = unpack('<q', str_size)
+        response = s.recv(int_size[0])
         s.close()
         self.log.info("[CLIENT] Received answer.")
         return deserialize_answer(response)

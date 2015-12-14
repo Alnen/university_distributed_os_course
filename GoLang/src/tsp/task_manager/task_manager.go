@@ -3,66 +3,17 @@ package task_manager
 import (
 	//"bufio"
 	"fmt"
-	"net"
 	"math/rand"
+	"net"
 	"time"
 	//"os"
-	//"strconv"
 	"container/list"
-	tsp_solver "tsp_test/tsp/solver"
-	tsp_types "tsp_test/tsp/types"
+	"strconv"
+	"encoding/binary"
+	tsp_solver "tsp/solver"
+	tsp_types "tsp/types"
 )
 
-// --------------- GlobalCostType ---------------
-type GlobalCostType struct {
-	value tsp_types.DataType
-	mutex chan bool
-}
-
-func (ai *GlobalCostType) Init(v tsp_types.DataType) {
-	ai.value = v
-	ai.mutex = make(chan bool, 1)
-	ai.mutex <- true
-}
-
-func (ai *GlobalCostType) Get() tsp_types.DataType {
-	<-ai.mutex
-	v := ai.value
-	ai.mutex <- true
-	return v
-}
-
-func (ai *GlobalCostType) Set(v tsp_types.DataType) {
-	<-ai.mutex
-	ai.value = v
-	ai.mutex <- true
-}
-//----------------------------------------------
-// ----------- COUNTER --------------
-type CounterType struct {
-	value int
-	mutex chan bool
-}
-
-func (ai *CounterType) Init(v int) {
-	ai.value = v
-	ai.mutex = make(chan bool, 1)
-	ai.mutex <- true
-}
-
-func (ai *CounterType) Get() int {
-	<-ai.mutex
-	v := ai.value
-	ai.mutex <- true
-	return v
-}
-
-func (ai *CounterType) Inc() {
-	<-ai.mutex
-	ai.value++
-	ai.mutex <- true
-}
-//-------------------------------------------
 type ClientInfo struct {
 	ID   int
 	Conn *net.Conn
@@ -71,7 +22,7 @@ type ClientInfo struct {
 type WorkerInfo struct {
 	ID          int
 	Conn        *net.Conn
-	CurrentTask *ClientTask
+	CurrentTask int
 }
 
 type ClientTask struct {
@@ -79,59 +30,102 @@ type ClientTask struct {
 	Task   *tsp_types.TaskType
 }
 
+//-------------------- TaskQueueItem --------------------
 type TaskQueueItem struct {
-	ID int
-	Client ClientInfo
-	SubTasks chan *tsp_types.TaskType
-	SubAnswers chan *tsp_types.AnswerType
-	FinalAnswer chan *tsp_types.AnswerType
-	CurrMinCost GlobalCostType
+	ID           int
+	Client       ClientInfo
+	SubTasks     chan *tsp_types.TaskType
+	SubAnswers   chan *tsp_types.AnswerType
+	FinalAnswer  chan *tsp_types.AnswerType
+	CurrMinCost  tsp_types.GlobalCostType
 	SubTaskCount int
 	// for sync
-	PreparedTasks chan bool
-	PreparedAnswers chan bool
-	SentTasksCount CounterType
-	ReceivedAnswersCount CounterType
-	PrepareFinished bool
-	WorkerReady chan bool
+	PreparedTasks        chan bool
+	PreparedAnswers      chan bool
+	SentTasksCount       tsp_types.CounterType
+	ReceivedAnswersCount tsp_types.CounterType
+	PrepareFinished      bool
+	WorkerReady          chan bool
 }
 
 func (tq_item *TaskQueueItem) Init(id int) {
 	tq_item.ID = id
-	tq_item.SubTasks = make(chan *tsp_types.TaskType, 20)
-	tq_item.SubAnswers = make(chan *tsp_types.AnswerType, 20)
+	tq_item.SubTasks = make(chan *tsp_types.TaskType, 10)
+	tq_item.SubAnswers = make(chan *tsp_types.AnswerType, 10)
 	tq_item.FinalAnswer = make(chan *tsp_types.AnswerType, 1)
 	tq_item.CurrMinCost.Init(tsp_types.POSITIVE_INF)
 	// for sync
-	tq_item.PreparedTasks = make(chan bool, 20)
-	tq_item.PreparedAnswers = make(chan bool, 20)
+	tq_item.PreparedTasks = make(chan bool, 10)
+	tq_item.PreparedAnswers = make(chan bool, 10)
 	tq_item.SentTasksCount.Init(0)
 	tq_item.ReceivedAnswersCount.Init(0)
 	tq_item.PrepareFinished = false
 	tq_item.WorkerReady = make(chan bool, 1)
 }
 
+//-------------------- TaskQueue --------------------
 type TaskQueue struct {
 	tasks *list.List
+	mutex chan bool
 }
 
-func (tq TaskQueue) Get(task_id int) {
-	//
+func (tq *TaskQueue) Init() {
+	tq.tasks = list.New()
+	tq.mutex = make(chan bool, 1)
+	tq.mutex <- true
 }
+
+func (tq *TaskQueue) Get(task_id int) *TaskQueueItem {
+	<-tq.mutex
+	for el := tq.tasks.Front(); el != nil; el = el.Next() {
+		task := el.Value.(*TaskQueueItem)
+		if (*task).ID == task_id {
+			tq.mutex <- true
+			return task
+		}
+	}
+	tq.mutex <- true
+	return nil
+}
+
+func (tq *TaskQueue) Len() int {
+	<-tq.mutex
+	length := tq.tasks.Len()
+	tq.mutex <- true
+	return length
+}
+
+func (tq *TaskQueue) PushBack(new_item *TaskQueueItem) {
+	<-tq.mutex
+	tq.tasks.PushBack(new_item)
+	tq.mutex <- true
+}
+
+func (tq *TaskQueue) PopFront() {
+	<-tq.mutex
+	tq.tasks.Remove(tq.tasks.Back())
+	tq.mutex <- true
+}
+
 // ---------------------------------------------------------
 
 var (
-	CurrTask *TaskQueueItem
-	free_workers_queue chan WorkerInfo
+	task_queue TaskQueue
+	//CurrTask           *TaskQueueItem
+	free_workers_queue chan *WorkerInfo
+	workers_list       *list.List
+	clients_list       *list.List
 	ch_quit            chan bool
 )
 
 func CreateTaskManager() {
 	//tasks_queue.Init()
-	free_workers_queue = make(chan WorkerInfo, 100)
+	free_workers_queue = make(chan *WorkerInfo, 100)
 	ch_quit = make(chan bool, 1)
-	CurrTask = &TaskQueueItem{}
-	CurrTask.Init(0)
+	workers_list = list.New()
+	clients_list = list.New()
+	task_queue.Init()
+	//CurrTask = nil
 	/*
 		for {
 			select {
@@ -144,8 +138,16 @@ func CreateTaskManager() {
 	*/
 }
 
-func AddFreeWorker(worker WorkerInfo) {
-	CurrTask.WorkerReady <- true
+func AddNewWorker(worker *WorkerInfo) {
+	workers_list.PushBack(worker)
+	free_workers_queue <- worker
+}
+
+func AddNewClient(client ClientInfo) {
+	clients_list.PushBack(client)
+}
+
+func AddFreeWorker(worker *WorkerInfo) {
 	free_workers_queue <- worker
 }
 
@@ -153,83 +155,127 @@ func AddNewTask(client ClientInfo, task_data []byte) {
 	//
 }
 
+func UpdateMinCost(task_id int, min_cost int) {
+	for el := workers_list.Front(); el != nil; el = el.Next() {
+		worker := el.Value.(*WorkerInfo)
+		if task_id == (*worker).CurrentTask {
+			msg := []byte(fmt.Sprintf("m%d %d", task_id, min_cost))
+			err := binary.Write(*worker.Conn, binary.LittleEndian, int64(len(msg)))
+			if err != nil {
+			    fmt.Printf("[UpdateMinCost] Write data error: %v", err)
+				return
+			}
+			(*worker.Conn).Write(msg)
+		}
+	}
+}
+
 func print_matrix(matrix *tsp_types.MatrixType, size int) {
 	fmt.Println("---------- MATRIX ---------")
 	for i := 0; i < size; i++ {
 		for j := 0; j < size; j++ {
-			fmt.Printf("%11d",int((*matrix)[i*size + j]))
+			fmt.Printf("%11d", int((*matrix)[i*size+j]))
 		}
 		fmt.Printf("\n")
 	}
 	fmt.Println("---------------------------")
 }
 
-func SolveTask(client ClientInfo, task_data []byte) {
+func SolveTask(client ClientInfo, task_data []byte, task_id int) {
+	//CurrTask = &TaskQueueItem{}
+	//CurrTask.Init(0)
 	fmt.Println("SolveTask: Start")
 	//task := generate_random_task_of_size_n(30, 100)
 	task := tsp_types.TaskType{}
 	task.FromXml(task_data)
-	print_matrix(task.Matrix, task.Size)
+	//print_matrix(task.Matrix, task.Size)
 	fmt.Println("SolveTask: Rand ", task.Size, len(*task.Matrix))
-	
-	go TaskHandler(CurrTask)
-	go AnswerCombiner(CurrTask)
+
+	new_task := &TaskQueueItem{}
+	new_task.Init(task_id)
+	task_queue.PushBack(new_task)
+
+	go TaskHandler(new_task)
+	go AnswerCombiner(new_task)
 
 	//split
 	enabled, task1, task2 := tsp_solver.CrusherImpl(&task)
 	for enabled {
-		print_matrix(task1.Matrix, task1.Size)
-		fmt.Printf("CurrCost: %d, MinCost: %d, Jumps: %v\n", task1.CurrCost, task1.MinCost, task1.Jumps)
-		CurrTask.SubTasks <- task1
-		CurrTask.SentTasksCount.Inc()
-		CurrTask.PreparedTasks <- true
-		task2.MinCost = CurrTask.CurrMinCost.Get()
+		//print_matrix(task1.Matrix, task1.Size)
+		//fmt.Printf("CurrCost: %d, MinCost: %d\n", task1.CurrCost, task1.MinCost)
+		//fmt.Printf("CurrCost: %d, MinCost: %d, Jumps: %v\n", task1.CurrCost, task1.MinCost, task1.Jumps)
+		new_task.SubTasks <- task1
+		new_task.SentTasksCount.Inc()
+		new_task.PreparedTasks <- true
+		task2.MinCost = new_task.CurrMinCost.Get()
 		enabled, task1, task2 = tsp_solver.CrusherImpl(task2)
 	}
-	CurrTask.PrepareFinished = true
-	CurrTask.PreparedTasks <- false
-	fmt.Println("[SolveTask] Split (",CurrTask.SentTasksCount.Get(),")")
-	fmt.Println("[SolveTask] Finish")
+	new_task.PrepareFinished = true
+	new_task.PreparedTasks <- false
+	fmt.Println("[SolveTask] Split (", new_task.SentTasksCount.Get(), ")")
+	final_answer := <-new_task.FinalAnswer
+	fmt.Printf("[SolveTask] Final Answer: (cost: %d, jumps: %v\n", final_answer.Cost, final_answer.Jumps)
+	
+	msg := []byte(final_answer.ToXml())
+	err := binary.Write(*client.Conn, binary.LittleEndian, int64(len(msg)))
+	if err != nil {
+	    fmt.Printf("[SolveTask] Write data error: %v", err)
+		return
+	}
+	(*client.Conn).Write(msg)
+	//fmt.Println("[SolveTask] Finish")
 }
 
 func TaskHandler(tq_item *TaskQueueItem) {
 	for i := 1; <-tq_item.PreparedTasks; i++ {
 		worker := <-free_workers_queue
-		<-tq_item.WorkerReady
 		task := <-tq_item.SubTasks
-		//tq_item.ReceivedAnswers <- true
-		fmt.Printf("[TaskHandler] Sent %d task\n", i)
-		// send to worker
-		(*worker.Conn).Write([]byte(task.ToString()))
+		(*worker).CurrentTask = tq_item.ID
+		msg := []byte("t" + strconv.Itoa(tq_item.ID) + " " + task.ToString())
+		err := binary.Write(*worker.Conn, binary.LittleEndian, int64(len(msg)))
+		if err != nil {
+		    fmt.Printf("[TaskHandler] Write data error: %v", err)
+			return
+		}
+		(*worker.Conn).Write(msg)
 	}
 	fmt.Println("[TaskHandler] Finish (count: ", tq_item.SentTasksCount.Get())
 	//tq_item.ReceivedAnswers <- false
 }
 
-func AnswerHandler(answer_data []byte) {
+func AnswerHandler(task_id int, answer_data []byte) {
 	//not_empty := <-CurrTask.ReceivedAnswers
-	CurrTask.ReceivedAnswersCount.Inc()
-	fmt.Printf("[AnswerHandler] Receive %d answer ... ", CurrTask.ReceivedAnswersCount.Get())
+	fmt.Printf("[AnswerHandler] Try Receive answer: task_id: %d, queue_len: %d\n", task_id, task_queue.Len())
+	task := task_queue.Get(task_id)
+	if task == nil {
+		fmt.Println("[AnswerHandler] I'm not found ... ")
+		return
+	}
+	task.ReceivedAnswersCount.Inc()
+	fmt.Printf("[AnswerHandler] Receive %d answer ... ", task.ReceivedAnswersCount.Get())
 	answer := tsp_types.AnswerType{}
 	answer.FromString(string(answer_data))
 	fmt.Printf("%d\n", answer.Cost)
-	CurrTask.SubAnswers <- &answer
-	CurrTask.PreparedAnswers <- true
-	if (CurrTask.PrepareFinished && (CurrTask.ReceivedAnswersCount.Get() == CurrTask.SentTasksCount.Get())) {
+	task.SubAnswers <- &answer
+	task.PreparedAnswers <- true
+	if task.PrepareFinished && (task.ReceivedAnswersCount.Get() == task.SentTasksCount.Get()) {
 		fmt.Println("[AnswerHandler] Finish")
-		CurrTask.PreparedAnswers <- false
+		task.PreparedAnswers <- false
 	}
 }
 
 func AnswerCombiner(tq_item *TaskQueueItem) {
 	best_solution := &tsp_types.AnswerType{[]tsp_types.JumpType{}, tsp_types.POSITIVE_INF}
 	for i := 1; <-tq_item.PreparedAnswers; i++ {
+		fmt.Printf("[AnswerCombiner] 1) Combine %d answer\n", i)
 		possible_solution := <-tq_item.SubAnswers
+		fmt.Printf("[AnswerCombiner] 2) Combine %d answer\n", i)
 		if (possible_solution.Cost != tsp_types.POSITIVE_INF) && (possible_solution.Cost < best_solution.Cost) {
-			CurrTask.CurrMinCost.Set(possible_solution.Cost)
+			tq_item.CurrMinCost.Set(possible_solution.Cost)
+			UpdateMinCost(tq_item.ID, int(possible_solution.Cost))
 			best_solution = possible_solution
 		}
-		fmt.Printf("[AnswerCombiner] Combine %d answer\n", i)
+		//fmt.Printf("[AnswerCombiner] Combine %d answer\n", i)
 	}
 	fmt.Println("[AnswerCombiner] Finish")
 	tq_item.FinalAnswer <- best_solution

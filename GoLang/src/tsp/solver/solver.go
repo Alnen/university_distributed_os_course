@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	tsp_types "tsp_test/tsp/types"
+	tsp_types "tsp/types"
 )
 
 var branch_count int = 0
@@ -62,7 +62,7 @@ func print_answer(answer tsp_types.AnswerType, title string) {
 	fmt.Printf("cost:  %d \n", answer.Cost)
 }
 
-func calculate_plus_cost(matrix *tsp_types.MatrixType, n int) (bool, tsp_types.DataType) {
+func calculate_plus_cost(matrix tsp_types.MatrixType, n int) (bool, tsp_types.DataType) {
 	cost := tsp_types.DataType(0)
 	// every row
 	for i := 0; i < n; i++ {
@@ -70,10 +70,10 @@ func calculate_plus_cost(matrix *tsp_types.MatrixType, n int) (bool, tsp_types.D
 		// looking min value in row
 		infinity_count := 0
 		for j := 0; j < n; j++ {
-			if (*matrix)[i*n+j] == tsp_types.POSITIVE_INF {
+			if matrix[i*n+j] == tsp_types.POSITIVE_INF {
 				infinity_count++
-			} else if (*matrix)[i*n+j] < min_value {
-				min_value = (*matrix)[i*n+j]
+			} else if matrix[i*n+j] < min_value {
+				min_value = matrix[i*n+j]
 			}
 		}
 		// if all elements in row are infinite then return
@@ -83,8 +83,8 @@ func calculate_plus_cost(matrix *tsp_types.MatrixType, n int) (bool, tsp_types.D
 		if min_value != 0 {
 			// subtract min value from entire row
 			for j := 0; j < n; j++ {
-				if (*matrix)[i*n+j] != tsp_types.POSITIVE_INF {
-					(*matrix)[i*n+j] -= min_value
+				if matrix[i*n+j] != tsp_types.POSITIVE_INF {
+					matrix[i*n+j] -= min_value
 				}
 			}
 			// add min value to cost
@@ -97,21 +97,21 @@ func calculate_plus_cost(matrix *tsp_types.MatrixType, n int) (bool, tsp_types.D
 		// looking min value in collum
 		infinity_count := 0
 		for j := 0; j < n; j++ {
-			if (*matrix)[j*n+i] == tsp_types.POSITIVE_INF {
+			if matrix[j*n+i] == tsp_types.POSITIVE_INF {
 				infinity_count++
-			} else if (*matrix)[j*n+i] < min_value {
-				min_value = (*matrix)[j*n+i]
+			} else if matrix[j*n+i] < min_value {
+				min_value = matrix[j*n+i]
 			}
 		}
 		// if all elements in collum are infinite then return
-		if (infinity_count == n) {
+		if infinity_count == n {
 			return false, tsp_types.DataType(0)
 		}
-		if (min_value != 0) {
+		if min_value != 0 {
 			// subtract min value from entire column
 			for j := 0; j < n; j++ {
-				if ((*matrix)[j*n+i] != tsp_types.POSITIVE_INF) {
-					(*matrix)[j*n+i] -= min_value
+				if matrix[j*n+i] != tsp_types.POSITIVE_INF {
+					matrix[j*n+i] -= min_value
 				}
 			}
 			// add min value to cost
@@ -126,7 +126,7 @@ func find_heavier_zero(matrix tsp_types.MatrixType, n int) tsp_types.ZeroInfoTyp
 	for i := 0; i < n; i++ {
 		// for every zero in row
 		for j := 0; j < n; j++ {
-			if (matrix[i*n+j] == 0) {
+			if matrix[i*n+j] == 0 {
 				// find min element in row
 				weight := tsp_types.DataType(0)
 				min_value := tsp_types.POSITIVE_INF
@@ -135,7 +135,7 @@ func find_heavier_zero(matrix tsp_types.MatrixType, n int) tsp_types.ZeroInfoTyp
 						min_value = matrix[i*n+z]
 					}
 				}
-				if (min_value != tsp_types.POSITIVE_INF) {
+				if min_value != tsp_types.POSITIVE_INF {
 					weight += min_value
 				}
 				// find min element in collum
@@ -145,11 +145,11 @@ func find_heavier_zero(matrix tsp_types.MatrixType, n int) tsp_types.ZeroInfoTyp
 						min_value = matrix[z*n+j]
 					}
 				}
-				if (min_value != tsp_types.POSITIVE_INF) {
+				if min_value != tsp_types.POSITIVE_INF {
 					weight += min_value
 				}
 				// remember new zero
-				if (heavier_zero.Weight < weight) {
+				if heavier_zero.Weight < weight {
 					heavier_zero = tsp_types.ZeroInfoType{i, j, weight}
 				}
 			}
@@ -160,7 +160,7 @@ func find_heavier_zero(matrix tsp_types.MatrixType, n int) tsp_types.ZeroInfoTyp
 
 func find_previous_jump(all_jumps []tsp_types.JumpType, current_jump tsp_types.JumpType) (tsp_types.JumpType, bool) {
 	for i := 0; i < len(all_jumps); i++ {
-		if (all_jumps[i].Destination == current_jump.Source) {
+		if all_jumps[i].Destination == current_jump.Source {
 			return all_jumps[i], true
 		}
 	}
@@ -169,7 +169,7 @@ func find_previous_jump(all_jumps []tsp_types.JumpType, current_jump tsp_types.J
 
 func find_next_jump(all_jumps []tsp_types.JumpType, current_jump tsp_types.JumpType) (tsp_types.JumpType, bool) {
 	for i := 0; i < len(all_jumps); i++ {
-		if (all_jumps[i].Source == current_jump.Destination) {
+		if all_jumps[i].Source == current_jump.Destination {
 			return all_jumps[i], true
 		}
 	}
@@ -190,7 +190,7 @@ func find_last_jump_in_direction(all_jumps []tsp_types.JumpType, current_jump ts
 			fmt.Println("i dont know what is happening")
 			return tsp_types.JumpType{-1, -1}, false
 		}
-		if (found_new == false) {
+		if found_new == false {
 			break
 		}
 	}
@@ -261,29 +261,32 @@ func generate_sub_task_data(matrix *tsp_types.MatrixType, x_mapping []int, y_map
 		i_x++
 		i_y++
 	}
-	fmt.Printf("[generate]** \n")
+	//fmt.Printf("[generate]** \n")
 	forbid_jump_if_needed(&new_matrix, new_x_mapping, new_y_mapping, new_all_jumps, n-1)
 	return tsp_types.SubTaskDataType{&new_matrix, new_x_mapping, new_y_mapping, new_all_jumps}
 }
 
-var SolveImpl_counter int = 0
+//var SolveImpl_counter int = 0
 
-func SolveImpl(task tsp_types.TaskType) tsp_types.AnswerType {
+func SolveImpl(task tsp_types.TaskType, gl_min_cost *tsp_types.GlobalCostType) (tsp_types.AnswerType, bool) {
 	//fmt.Println("[**] Task size: ", task.Size," matrix size: ",len(*task.Matrix), " cost:", int(task.SolutionCost), " min:", int(task.MinCost))
-	SolveImpl_counter++
-	fmt.Printf("[SolveImpl] %d\n", SolveImpl_counter)
+	//SolveImpl_counter++
+	//fmt.Printf("[SolveImpl] %d\n", SolveImpl_counter)
 	//fmt.Printf("[SolveImpl] Task y mapping: %v\n", task.YMapping)
 	//fmt.Printf("[SolveImpl] Task jumps: %v\n", task.Jumps)
 	branch_count++
+	if gl_min_cost.Get() < task.MinCost {
+		return tsp_types.ERROR_ANSWER, false
+	}
 	if (task.Size == 0) || (task.Size == 1) {
 		//fmt.Println("----- ERROR ANSWER 1")
-		return tsp_types.ERROR_ANSWER
+		return tsp_types.ERROR_ANSWER, true
 	}
-	success, additional_cost := calculate_plus_cost(task.Matrix, task.Size)
-	fmt.Printf("additional_cost: %d\n", additional_cost)
+	success, additional_cost := calculate_plus_cost(*task.Matrix, task.Size)
+	//fmt.Printf("additional_cost: %d\n", additional_cost)
 	if !success {
 		//fmt.Println("----- ERROR ANSWER 2")
-		return tsp_types.ERROR_ANSWER
+		return tsp_types.ERROR_ANSWER, true
 	}
 	task.CurrCost += additional_cost
 	heavier_zero := find_heavier_zero(*task.Matrix, task.Size)
@@ -303,22 +306,25 @@ func SolveImpl(task tsp_types.TaskType) tsp_types.AnswerType {
 				jumps = append(jumps, task.Jumps[j])
 			}
 			//fmt.Println("SOLUTION COST: ", int(task.SolutionCost))
-			return tsp_types.AnswerType{jumps, task.CurrCost}
+			return tsp_types.AnswerType{jumps, task.CurrCost}, true
 		} else {
 			//fmt.Println("tsp_types.ERROR_ANSWER 1")
 			//fmt.Println("----- ERROR ANSWER 3")
-			return tsp_types.ERROR_ANSWER
+			return tsp_types.ERROR_ANSWER, true
 		}
 	}
-	fmt.Printf("[SolveImpl]* \n")
+	//fmt.Printf("[SolveImpl]* \n")
 	// prepare data for recursive call
 	sub_dt := generate_sub_task_data(task.Matrix, task.RowMapping, task.ColMapping, task.Jumps, heavier_zero, task.Size)
 	//call this function recursively
-	fmt.Printf("[SolveImpl]** \n")
-	answer := SolveImpl(tsp_types.TaskType{sub_dt.Matrix, sub_dt.RowMapping, sub_dt.ColMapping, sub_dt.Jumps, task.CurrCost, task.MinCost, task.Size - 1})
+	//fmt.Printf("[SolveImpl]** \n")
+	answer, less_global := SolveImpl(tsp_types.TaskType{sub_dt.Matrix, sub_dt.RowMapping, sub_dt.ColMapping, sub_dt.Jumps, task.CurrCost, task.MinCost, task.Size - 1}, gl_min_cost)
+	if !less_global {
+		return tsp_types.ERROR_ANSWER, false
+	}
 	//print_answer(answer, "GOT ANSWER")
 	final_path := []tsp_types.JumpType{}
-	if (answer.Cost < task.MinCost) {
+	if answer.Cost < task.MinCost {
 		//fmt.Printf("[SolveImpl] AnswerJumps: %v\n", answer.Jumps)
 		final_path = answer.Jumps
 		task.MinCost = answer.Cost
@@ -326,8 +332,11 @@ func SolveImpl(task tsp_types.TaskType) tsp_types.AnswerType {
 	//right_path
 	if (task.CurrCost + heavier_zero.Weight) < task.MinCost {
 		//correct first one
-		(*task.Matrix)[heavier_zero.Row*task.Size + heavier_zero.Col] = tsp_types.POSITIVE_INF
-		answer = SolveImpl(task)
+		(*task.Matrix)[heavier_zero.Row*task.Size+heavier_zero.Col] = tsp_types.POSITIVE_INF
+		answer, less_global = SolveImpl(task, gl_min_cost)
+		if !less_global {
+			return tsp_types.ERROR_ANSWER, false
+		}
 		if answer.Cost < task.MinCost {
 			final_path = answer.Jumps
 			task.MinCost = answer.Cost
@@ -336,11 +345,11 @@ func SolveImpl(task tsp_types.TaskType) tsp_types.AnswerType {
 	// return answer
 	if task.MinCost < tsp_types.POSITIVE_INF {
 		//fmt.Printf("[SolveImpl] %i | %v\n", int(task.SolutionCost), final_path)
-		return tsp_types.AnswerType{final_path, task.MinCost}
+		return tsp_types.AnswerType{final_path, task.MinCost}, true
 	} else {
 		//fmt.Println("[SolveImpl] ERROR_ANSWER")
 		//fmt.Println("----- ERROR ANSWER 4")
-		return tsp_types.ERROR_ANSWER
+		return tsp_types.ERROR_ANSWER, true
 	}
 }
 
@@ -349,7 +358,7 @@ func SolveImpl(task tsp_types.TaskType) tsp_types.AnswerType {
 func CrusherImpl(task *tsp_types.TaskType) (bool, *tsp_types.TaskType, *tsp_types.TaskType) {
 	//crusher_counter++
 	//fmt.Printf("[CrusherImpl] (%d) size : %d, matrix size %d\n", crusher_counter, task.Size, len(task.Matrix))
-	success, additional_cost := calculate_plus_cost(task.Matrix, task.Size)
+	success, additional_cost := calculate_plus_cost(*task.Matrix, task.Size)
 	if success != true {
 		return false, nil, nil
 	}
@@ -359,6 +368,6 @@ func CrusherImpl(task *tsp_types.TaskType) (bool, *tsp_types.TaskType, *tsp_type
 	sub_dt := generate_sub_task_data(task.Matrix, task.RowMapping, task.ColMapping, task.Jumps, heavier_zero, task.Size)
 	//call this function recursively
 	task1 := tsp_types.TaskType{sub_dt.Matrix, sub_dt.RowMapping, sub_dt.ColMapping, sub_dt.Jumps, task.CurrCost, task.MinCost, task.Size - 1}
-	(*task.Matrix)[heavier_zero.Row*task.Size + heavier_zero.Col] = tsp_types.POSITIVE_INF
+	(*task.Matrix)[heavier_zero.Row*task.Size+heavier_zero.Col] = tsp_types.POSITIVE_INF
 	return true, &task1, task
 }

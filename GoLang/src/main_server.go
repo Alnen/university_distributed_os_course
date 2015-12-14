@@ -1,20 +1,15 @@
 package main
 
 import (
-	//tsp_solver "tsp_service/tsp/solver"
-	//"bufio"
-	"container/list"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"os"
 	"runtime"
-	"strconv"
 	"sync"
 	"time"
-	tsp_task_manager "tsp_test/tsp/task_manager"
-	tsp_types "tsp_test/tsp/types"
+	"encoding/binary"
+	tsp_task_manager "tsp/task_manager"
 )
 
 type (
@@ -46,31 +41,26 @@ const (
 )
 
 var (
-	new_client_id           int
-	new_worker_id           int
-	input_global_task_queue chan *tsp_types.TaskType
-	ch_logs                 chan string
-	ch_input_messages       chan MessageType
-	ch_cmd                  chan ServerCmdType
-	server_state            ServerState
-	worker_count            int
+	new_client_id int
+	new_worker_id int
+	new_task_id   int
+	logger        *log.Logger
+	ch_cmd        chan ServerCmdType
+	server_state  ServerState
 )
 
 func main() {
-	var wg_server, wg_logger sync.WaitGroup
-	worker_count = 2
+	var wg_server sync.WaitGroup
 	new_client_id = 0
 	new_worker_id = 0
+	new_task_id = 0
 	ch_cmd = make(chan ServerCmdType)
-	ch_logs = make(chan string, 100)
 	server_state = STOPPED
-	ch_stop_logging := make(chan bool)
+	logger = log.New(os.Stdout, "SERVER: ", log.Ldate|log.Ltime)
 
 	// start server
 	wg_server.Add(1)
 	go server_thread(&wg_server)
-	wg_logger.Add(1)
-	go log_thread(os.Stdout, ch_stop_logging, &wg_logger)
 
 	var line string
 	for {
@@ -84,43 +74,22 @@ func main() {
 			if server_state == STOPPED {
 				wg_server.Add(1)
 				go server_thread(&wg_server)
-				wg_logger.Add(1)
-				go log_thread(os.Stdout, ch_stop_logging, &wg_logger)
 			} else {
 				fmt.Println("SERVER COMMAND FAILED: Server is already running!")
 			}
 		case "stop":
 			if server_state == RUNNING {
 				ch_cmd <- SERVER_QUIT
-				ch_stop_logging <- true
 				wg_server.Wait()
-				wg_logger.Wait()
 			} else {
 				fmt.Println("SERVER COMMAND FAILED: Server is already stopped!")
 			}
 		case "quit":
 			if server_state == RUNNING {
 				ch_cmd <- SERVER_QUIT
-				ch_stop_logging <- true
 				wg_server.Wait()
-				wg_logger.Wait()
 			}
 			fmt.Println("QUIT")
-			return
-		}
-	}
-}
-
-func log_thread(writerHandle io.Writer, ch_stop_logging chan bool, wg_logger *sync.WaitGroup) {
-	defer wg_logger.Done()
-	logger := log.New(writerHandle,
-		"SERVER: ",
-		log.Ldate|log.Ltime)
-	for {
-		select {
-		case msg := <-ch_logs:
-			logger.Println(msg)
-		case <-ch_stop_logging:
 			return
 		}
 	}
@@ -129,52 +98,44 @@ func log_thread(writerHandle io.Writer, ch_stop_logging chan bool, wg_logger *sy
 func server_thread(wg_server *sync.WaitGroup) {
 	defer wg_server.Done()
 	server_state = RUNNING
-	ch_logs <- "Launching server..."
+	logger.Println("Launching server...")
 	runtime.GOMAXPROCS(runtime.NumCPU())
-	ch_input_messages = make(chan MessageType, worker_count)
 	tsp_task_manager.CreateTaskManager()
 
 	// listen workers
 	laddr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:5000")
 	if nil != err {
-		str := fmt.Sprintf("ResolveTCPAddr error: %v\n", err)
-		ch_logs <- str
+		logger.Printf("ResolveTCPAddr (worker) error: %v\n", err)
 		server_state = STOPPED
 		return
 	}
 	listener, err := net.ListenTCP("tcp", laddr)
 	if err != nil {
-		str := fmt.Sprintf("workers listen error: %v\n", err)
-		ch_logs <- str
+		logger.Printf("workers listen error: %v\n", err)
 		server_state = STOPPED
 		return
 	}
-	workers_list := list.New()
 	var wg_workers_accept sync.WaitGroup
 	wg_workers_accept.Add(1)
-	go accept_workers(workers_list, listener, &wg_workers_accept)
+	go accept_workers(listener, &wg_workers_accept)
 
 	// listen clients
 	laddr, err = net.ResolveTCPAddr("tcp", "127.0.0.1:6000")
 	if nil != err {
-		str := fmt.Sprintf("ResolveTCPAddr error: %v\n", err)
-		ch_logs <- str
+		logger.Printf("ResolveTCPAddr (client) error: %v\n", err)
 		server_state = STOPPED
 		return
 	}
 	listener, err = net.ListenTCP("tcp", laddr)
 	if err != nil {
-		str := fmt.Sprintf("clients listen error: %v\n", err)
-		ch_logs <- str
+		logger.Printf("clients listen error: %v\n", err)
 		server_state = STOPPED
 		return
 	}
-	clients_list := list.New()
 	var wg_clients_accept sync.WaitGroup
 	wg_clients_accept.Add(1)
-	go accept_clients(clients_list, listener, &wg_clients_accept)
-
-	ch_logs <- "Server work is started"
+	go accept_clients(listener, &wg_clients_accept)
+	logger.Println("Server work is started")
 
 	// listen commands
 	for {
@@ -184,13 +145,13 @@ func server_thread(wg_server *sync.WaitGroup) {
 			server_state = STOPPED
 			wg_workers_accept.Wait()
 			wg_clients_accept.Wait()
-			ch_logs <- "Server work is finished"
+			logger.Println("Server work is finished")
 			return
 		}
 	}
 }
 
-func accept_clients(clients_list *list.List, listener *net.TCPListener, wg *sync.WaitGroup) {
+func accept_clients(listener *net.TCPListener, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for {
 		if server_state == STOPPED {
@@ -204,21 +165,20 @@ func accept_clients(clients_list *list.List, listener *net.TCPListener, wg *sync
 			if ok && netErr.Timeout() && netErr.Temporary() {
 				continue
 			} else {
-				str := fmt.Sprintf("accept error: %v\n", err)
-				ch_logs <- str
+				logger.Printf("accept client error: %v\n", err)
 				server_state = STOPPED
 				return
 			}
 		}
 		client := tsp_task_manager.ClientInfo{new_client_id, &conn}
 		new_client_id++
-		clients_list.PushBack(client)
-		ch_logs <- ("I'm accept client #" + strconv.Itoa(client.ID))
+		tsp_task_manager.AddNewClient(client)
+		logger.Println("I'm accept client #", client.ID)
 		go listen_client(client)
 	}
 }
 
-func accept_workers(workers_list *list.List, listener *net.TCPListener, wg *sync.WaitGroup) {
+func accept_workers(listener *net.TCPListener, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for {
 		if server_state == STOPPED {
@@ -232,36 +192,40 @@ func accept_workers(workers_list *list.List, listener *net.TCPListener, wg *sync
 			if ok && netErr.Timeout() && netErr.Temporary() {
 				continue
 			} else {
-				str := fmt.Sprintf("accept error: %v\n", err)
-				ch_logs <- str
+				logger.Printf("accept worker error: %v\n", err)
 				server_state = STOPPED
 				return
 			}
 		}
-		worker := tsp_task_manager.WorkerInfo{new_worker_id, &conn, nil}
-		workers_list.PushBack(worker)
-		tsp_task_manager.AddFreeWorker(worker)
-		ch_logs <- ("I'm accept worker #" + strconv.Itoa(new_worker_id))
+		worker := &tsp_task_manager.WorkerInfo{new_worker_id, &conn, -1}
+		tsp_task_manager.AddNewWorker(worker)
+		logger.Println("I'm accept worker #", new_worker_id)
 		go listen_worker(worker)
 		new_worker_id++
 	}
 }
 
-//func listen_client(client tsp_task_manager.ClientInfo, worker_list *list.List) {
 func listen_client(client tsp_task_manager.ClientInfo) {
 	for {
-		line := make([]byte, 4096)
-		actual_size, err := (*client.Conn).Read(line)
+		/*
+		var data_size int64
+		err := binary.Read(*client.Conn, binary.LittleEndian, &data_size)
 		if err != nil {
-			str := fmt.Sprintf("Reading data error: %v", err)
-			ch_logs <- str
+		    logger.Printf("Reading data size (client) error: %v", err)
 			return
 		}
-		actual_line := line[:actual_size]
+		data := make([]byte, data_size)
+		*/
+		data := make([]byte, 4096)
+		actual_size, err := (*client.Conn).Read(data)
+		if err != nil {
+			logger.Printf("Reading data (client) error: %v", err)
+			return
+		}
+		data = data[:actual_size]
 		//ch_logs <- ("listen_client: receive task " + string(actual_line))
-		go tsp_task_manager.SolveTask(client, actual_line)
-		final_answer := <-tsp_task_manager.CurrTask.FinalAnswer
-		fmt.Printf("[listen_client] Final Answer: (cost: %d, jumps: %v\n", final_answer.Cost, final_answer.Jumps)
+		go tsp_task_manager.SolveTask(client, data, new_task_id)
+		new_task_id++
 		/*
 			if string(line) == "quit" {
 				for e := worker_list.Front(); e != nil; e = e.Next() {
@@ -277,19 +241,27 @@ func listen_client(client tsp_task_manager.ClientInfo) {
 	}
 }
 
-func listen_worker(worker tsp_task_manager.WorkerInfo) {
+func listen_worker(worker *tsp_task_manager.WorkerInfo) {
 	for {
-		line := make([]byte, 4096)
-		actual_size, err := (*worker.Conn).Read(line)
+		var data_size int64
+		err := binary.Read(*worker.Conn, binary.LittleEndian, &data_size)
 		if err != nil {
-			str := fmt.Sprintf("Reading data error: %v", err)
-			ch_logs <- str
+		    logger.Printf("Reading data size (worker) error: %v", err)
 			return
 		}
-		line = line[:actual_size]
+		data := make([]byte, data_size)
+		_ , err = (*worker.Conn).Read(data)
+		if err != nil {
+			logger.Printf("Reading data (worker) error: %v", err)
+			return
+		}
+		if string(data[0]) == "q" {
+			return
+		}
+		//line = data[:actual_size]
 		//ch_logs <- ("listen_worker: receive answer" + string(line))
 		// write answer
-		tsp_task_manager.AnswerHandler(line)
+		tsp_task_manager.AnswerHandler((*worker).CurrentTask, data)
 		tsp_task_manager.AddFreeWorker(worker)
 		//(*worker.CurrentTask.Client.Conn).Write(line)
 		/*

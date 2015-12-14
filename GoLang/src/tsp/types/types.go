@@ -32,28 +32,32 @@ type (
 		Source, Destination int
 	}
 	SubTaskDataType struct {
-		Matrix   *MatrixType
+		Matrix     *MatrixType
 		RowMapping []int
 		ColMapping []int
-		Jumps    []JumpType
+		Jumps      []JumpType
 	}
 	AnswerType struct {
 		Jumps []JumpType
 		Cost  DataType
 	}
 	DataTaskType struct {
-		Matrix   *MatrixType
+		Matrix     *MatrixType
 		RowMapping []int
 		ColMapping []int
-		Size     int
+		Size       int
 	}
 	TaskType struct {
-		Matrix                *MatrixType
-		RowMapping []int
-		ColMapping []int
-		Jumps                 []JumpType
+		Matrix            *MatrixType
+		RowMapping        []int
+		ColMapping        []int
+		Jumps             []JumpType
 		CurrCost, MinCost DataType
-		Size                  int
+		Size              int
+	}
+	GlobalCostType struct {
+		value DataType
+		mutex chan bool
 	}
 )
 
@@ -76,8 +80,17 @@ var (
 	}
 )
 
+// ----------------- AnswerType -----------------
 func (answer *AnswerType) ToXml() []byte {
-	xml_answer := &AnswerXML{Cost: int(answer.Cost), Jumps: JumpTypeArrayToString(answer.Jumps)}
+	str_jumps := ""
+	for i := 0; i < len(answer.Jumps); i++ {
+		if i > 0 {
+			str_jumps += ","
+		}
+		str_jumps += strconv.Itoa(answer.Jumps[i].Source)
+		str_jumps += "-" + strconv.Itoa(answer.Jumps[i].Destination)
+	}
+	xml_answer := &AnswerXML{Cost: int(answer.Cost), Jumps: str_jumps /*JumpTypeArrayToString(answer.Jumps)*/}
 	xml_string, err := xml.MarshalIndent(xml_answer, "", "")
 	if err != nil {
 		fmt.Printf("error: %v\n", err)
@@ -124,6 +137,7 @@ func (answer *AnswerType) FromString(data string) {
 	answer.Cost = DataType(cost)
 }
 
+// ----------------- TaskType -----------------
 func (task *TaskType) ToXml() []byte {
 	xml_task := &TaskXML{Size: task.Size, Matrix: task.Matrix.ToString()}
 	xml_string, err := xml.MarshalIndent(xml_task, "", "")
@@ -193,45 +207,57 @@ func (task *TaskType) FromString(data string) {
 	if vec_size < 4 {
 		return
 	}
-	size, _ := strconv.Atoi(data_vec[0])
+	size, err := strconv.Atoi(data_vec[0])
+	if err != nil {
+		fmt.Printf("task.FromString convert matrix len error: %v\n", err)
+	}
 	matrix := make(MatrixType, size*size)
 	row_mapping := make([]int, size)
 	col_mapping := make([]int, size)
+	fmt.Println("[FROM STRING]: data_vec.size = ", len(data_vec), " | ", (1 + (size+2)*size))
+	/*
+	if len(data_vec) <= (1 + (size+2)*size) {
+		fmt.Printf("[FROM STRING]: size: %d\n", size)
+		fmt.Printf("[FROM STRING]: data_vec: %d\n", len(data_vec))
+		fmt.Printf("[FROM STRING]: data_str: \"%d\"\n", len([]byte(data)))
+	}
+	*/
 	jumps_len, _ := strconv.Atoi(data_vec[1+(size+2)*size])
 	jumps := make([]JumpType, jumps_len)
 	curr_cost, err := strconv.Atoi(data_vec[vec_size-2])
 	if err != nil {
-		fmt.Printf("task.FromString curr_cost error: %v\n", err)
+		fmt.Printf("task.FromString curr_cost (%s) error: %v\n", string(data_vec[vec_size-2]), err)
 	}
 	min_cost, err := strconv.Atoi(data_vec[vec_size-1])
 	if err != nil {
-		fmt.Printf("task.FromString min_cost error: %v\n", err)
+		fmt.Printf("task.FromString min_cost (%s) error: %v\n", string(data_vec[vec_size-1]), err)
 	}
 	offset := 1
-	for i := offset; i < offset + size*size; i++ {
+	for i := offset; i < offset+size*size; i++ {
 		matrix_value, _ := strconv.Atoi(data_vec[i])
 		matrix[i-offset] = DataType(matrix_value)
 	}
 	offset = offset + size*size
-	for i := offset; i < offset + size; i++ {
+	for i := offset; i < offset+size; i++ {
 		row_mapping[i-offset], _ = strconv.Atoi(data_vec[i])
 	}
 	offset = offset + size
-	for i := offset; i < offset + size; i++ {
+	for i := offset; i < offset+size; i++ {
 		col_mapping[i-offset], _ = strconv.Atoi(data_vec[i])
 	}
 	offset = offset + size + 1
 	j := 0
-	for i := offset; i < offset + jumps_len*2; i += 2 {
+	for i := offset; i < offset+jumps_len*2; i += 2 {
 		jumps[j].Source, _ = strconv.Atoi(data_vec[i])
 		jumps[j].Destination, _ = strconv.Atoi(data_vec[i+1])
 		j++
 	}
+	fmt.Printf("[FROM STRING]: size: %d\n", size)
 	//fmt.Printf("[FromString] row_mapping: %v\n", row_mapping)
 	//fmt.Printf("[FromString] col_mapping: %v\n", row_mapping)
-	fmt.Printf("[FromString] Jumps: %v\n", jumps)
-	fmt.Printf("[FromString] CurrCost: %d\n", curr_cost)
-	fmt.Printf("[FromString] MinCost: %d\n", min_cost)
+	//fmt.Printf("[FromString] Jumps: %v\n", jumps)
+	//fmt.Printf("[FromString] CurrCost: %d\n", curr_cost)
+	//fmt.Printf("[FromString] MinCost: %d\n", min_cost)
 	task.Matrix = &matrix
 	task.RowMapping = row_mapping
 	task.ColMapping = col_mapping
@@ -250,6 +276,7 @@ func (task *TaskType) FromString(data string) {
 	*/
 }
 
+// ----------------- MatrixType -----------------
 func (matrix *MatrixType) ToString() string {
 	str_data := ""
 	for i := 0; i < len(*matrix); i++ {
@@ -272,6 +299,7 @@ func (matrix *MatrixType) FromString(str string, size int) {
 	}
 }
 
+// ------------ Jump Array convert ------------------
 func JumpTypeArrayToString(jumps []JumpType) string {
 	str_data := ""
 	for i := 0; i < len(jumps); i++ {
@@ -298,6 +326,7 @@ func JumpTypeArrayFromString(str string) []JumpType {
 	return jumps
 }
 
+// ----- Serialize and Deserialize vector ------
 func SerializeVector(vec []int) string {
 	data := ""
 	for i := 0; i < len(vec); i++ {
@@ -322,3 +351,50 @@ func DeserializeVector(s string) []int {
 	}
 	return vec
 }
+
+// --------------- GlobalCostType ------------
+func (ai *GlobalCostType) Init(v DataType) {
+	ai.value = v
+	ai.mutex = make(chan bool, 1)
+	ai.mutex <- true
+}
+
+func (ai *GlobalCostType) Get() DataType {
+	<-ai.mutex
+	v := ai.value
+	ai.mutex <- true
+	return v
+}
+
+func (ai *GlobalCostType) Set(v DataType) {
+	<-ai.mutex
+	ai.value = v
+	ai.mutex <- true
+}
+
+// ----------- COUNTER -------------------------
+type CounterType struct {
+	value int
+	mutex chan bool
+}
+
+func (ai *CounterType) Init(v int) {
+	ai.value = v
+	ai.mutex = make(chan bool, 1)
+	ai.mutex <- true
+}
+
+func (ai *CounterType) Get() int {
+	<-ai.mutex
+	v := ai.value
+	ai.mutex <- true
+	return v
+}
+
+func (ai *CounterType) Inc() {
+	<-ai.mutex
+	ai.value++
+	ai.mutex <- true
+}
+
+//----------------------------------------------
