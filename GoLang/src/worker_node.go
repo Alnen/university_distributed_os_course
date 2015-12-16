@@ -1,9 +1,11 @@
 package main
 
 import (
+	//"bufio"
 	"fmt"
 	"log"
 	"net"
+	//"io"
 	"os"
 	"runtime"
 	"strconv"
@@ -14,6 +16,11 @@ import (
 )
 
 type WorkerCmdType int
+
+type CurrTaskInfo struct {
+	TaskID int
+	MinCost tsp_types.GlobalCostType
+}
 
 var answer_count int = 0
 
@@ -28,16 +35,16 @@ func print_matrix(task *tsp_types.TaskType) {
 	fmt.Println("---------------------------")
 }
 
-func solve_task(task_data string, conn *net.Conn, logger *log.Logger, gl_min_cost *tsp_types.GlobalCostType) {
+func solve_task(task_data string, conn *net.Conn, logger *log.Logger, curr_task_info *CurrTaskInfo) {
 	//fmt.Println("NEW TASK RECEIVED ...")
-	fmt.Printf("[solve_task]: \"%s\"\n", task_data)
+	//fmt.Printf("[solve_task]: \"%s\"\n", task_data)
 	task := &tsp_types.TaskType{}
 	task.FromString(task_data)
 	//fmt.Println("Task size: ", task.Size, " matrix: ", len(*task.Matrix))
 	//print_matrix(task)
 	answer_count++
 	//fmt.Printf("Calc answer (%d) ... ", answer_count)
-	answer, _ := tsp_solver.SolveImpl(*task, gl_min_cost)
+	answer, _ := tsp_solver.SolveImpl(*task, &curr_task_info.MinCost)
 	logger.Printf("Calc answer (%d) ... %d\n", answer_count, answer.Cost)
 	//fmt.Printf("%d ... ", answer.Cost)
 	byte_answer := []byte(answer.ToString())
@@ -46,11 +53,12 @@ func solve_task(task_data string, conn *net.Conn, logger *log.Logger, gl_min_cos
 	    logger.Printf("Write data error: %v", err)
 		return
 	}
+	curr_task_info.TaskID = -1
 	(*conn).Write([]byte(answer.ToString()))
 	//fmt.Printf("sent\n")
 }
 
-func listen_server(conn *net.Conn, logger *log.Logger, gl_min_cost *tsp_types.GlobalCostType, curr_task_id *int) {
+func listen_server(conn *net.Conn, logger *log.Logger, curr_task_info *CurrTaskInfo) {
 	for {
 		/*
 		line := make([]byte, 4096)
@@ -60,13 +68,15 @@ func listen_server(conn *net.Conn, logger *log.Logger, gl_min_cost *tsp_types.Gl
 			return
 		}
 		*/
+		//fmt.Println("[listen_server] data_size: ", data_size)
 		var data_size int64
 		err := binary.Read(*conn, binary.LittleEndian, &data_size)
 		if err != nil {
-		    logger.Printf("Reading data size (client) error: %v", err)
+		   	logger.Printf("Reading data size (client) error: %v\n", err)
 			return
 		}
-		fmt.Println("[listen_server] data_size: ", data_size)
+		fmt.Println("")
+		//fmt.Println("[listen_server] data_size: ", data_size)
 		data := make([]byte, data_size)
 		_ , err = (*conn).Read(data)
 		switch string(data[0]) {
@@ -89,9 +99,13 @@ func listen_server(conn *net.Conn, logger *log.Logger, gl_min_cost *tsp_types.Gl
 				logger.Printf("min cost convert error: %v", err)
 				return
 			}
-			if task_id == *curr_task_id {
+			if curr_task_info.TaskID < 0 {
+				fmt.Println("NEW MIN COST 3")
+				curr_task_info.TaskID = task_id
+				curr_task_info.MinCost.Set(tsp_types.DataType(min_cost))
+			} else if task_id == curr_task_info.TaskID {
 				fmt.Println("NEW MIN COST 2")
-				gl_min_cost.Set(tsp_types.DataType(min_cost))
+				curr_task_info.MinCost.Set(tsp_types.DataType(min_cost))
 			}
 		default:
 			task_str := string(data[1:])
@@ -101,8 +115,8 @@ func listen_server(conn *net.Conn, logger *log.Logger, gl_min_cost *tsp_types.Gl
 				logger.Printf("curr task id convert error: %v", err)
 				return
 			}
-			*curr_task_id = new_task_id
-			go solve_task(task_str[sep_index+1:], conn, logger, gl_min_cost)
+			curr_task_info.TaskID = new_task_id
+			go solve_task(task_str[sep_index+1:], conn, logger, curr_task_info)
 		}
 	}
 	defer (*conn).Close()
@@ -120,7 +134,8 @@ func start_worker(worker_id int) {
 	if err != nil {
 		logger.Printf("dial error: %v", err)
 	}
-	go listen_server(&conn, logger, &gl_min_cost, &curr_task_id)
+	curr_task_info := CurrTaskInfo{curr_task_id, gl_min_cost}
+	go listen_server(&conn, logger, &curr_task_info)
 }
 
 func main() {

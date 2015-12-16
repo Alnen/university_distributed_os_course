@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"io"
 	"os"
 	"runtime"
 	"sync"
@@ -216,13 +217,27 @@ func listen_client(client tsp_task_manager.ClientInfo) {
 		}
 		data := make([]byte, data_size)
 		*/
-		data := make([]byte, 4096)
-		actual_size, err := (*client.Conn).Read(data)
+		var data_size int64
+		err := binary.Read(*client.Conn, binary.LittleEndian, &data_size)
 		if err != nil {
-			logger.Printf("Reading data (client) error: %v", err)
+			if err == io.EOF {
+				logger.Printf("Close client(%d) connection\n", client.ID)
+			} else {
+				logger.Printf("Reading data (client) error: %v", err)
+			}
 			return
 		}
-		data = data[:actual_size]
+		fmt.Printf("Data_size: %d\n", data_size)
+		data := make([]byte, data_size)
+		_, err = (*client.Conn).Read(data)
+		if err != nil {
+			if err == io.EOF {
+				logger.Printf("Close client(%d) connection\n", client.ID)
+			} else {
+				logger.Printf("Reading data (client) error: %v", err)
+			}
+			return
+		}
 		//ch_logs <- ("listen_client: receive task " + string(actual_line))
 		go tsp_task_manager.SolveTask(client, data, new_task_id)
 		new_task_id++

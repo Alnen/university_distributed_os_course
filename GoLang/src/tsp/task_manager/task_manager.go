@@ -151,10 +151,6 @@ func AddFreeWorker(worker *WorkerInfo) {
 	free_workers_queue <- worker
 }
 
-func AddNewTask(client ClientInfo, task_data []byte) {
-	//
-}
-
 func UpdateMinCost(task_id int, min_cost int) {
 	for el := workers_list.Front(); el != nil; el = el.Next() {
 		worker := el.Value.(*WorkerInfo)
@@ -166,6 +162,22 @@ func UpdateMinCost(task_id int, min_cost int) {
 				return
 			}
 			(*worker.Conn).Write(msg)
+		}
+	}
+}
+
+func UpdateOneWorkerMinCost(worker *WorkerInfo, task_id int, min_cost int) {
+	for el := workers_list.Front(); el != nil; el = el.Next() {
+		w := el.Value.(*WorkerInfo)
+		if worker.ID == w.ID {
+			msg := []byte(fmt.Sprintf("m%d %d", task_id, min_cost))
+			err := binary.Write(*worker.Conn, binary.LittleEndian, int64(len(msg)))
+			if err != nil {
+			    fmt.Printf("[UpdateOneWorkerMinCost] Write data error: %v", err)
+				return
+			}
+			(*worker.Conn).Write(msg)
+			return
 		}
 	}
 }
@@ -191,6 +203,8 @@ func SolveTask(client ClientInfo, task_data []byte, task_id int) {
 	//print_matrix(task.Matrix, task.Size)
 	fmt.Println("SolveTask: Rand ", task.Size, len(*task.Matrix))
 
+	//print_matrix(task.Matrix, task.Size)
+
 	new_task := &TaskQueueItem{}
 	new_task.Init(task_id)
 	task_queue.PushBack(new_task)
@@ -203,7 +217,7 @@ func SolveTask(client ClientInfo, task_data []byte, task_id int) {
 	for enabled {
 		//print_matrix(task1.Matrix, task1.Size)
 		//fmt.Printf("CurrCost: %d, MinCost: %d\n", task1.CurrCost, task1.MinCost)
-		//fmt.Printf("CurrCost: %d, MinCost: %d, Jumps: %v\n", task1.CurrCost, task1.MinCost, task1.Jumps)
+		//fmt.Printf("CurrCost: %d, MinCost: %d, Jumps: %v\n", task2.CurrCost, task2.MinCost, task2.Jumps)
 		new_task.SubTasks <- task1
 		new_task.SentTasksCount.Inc()
 		new_task.PreparedTasks <- true
@@ -212,9 +226,9 @@ func SolveTask(client ClientInfo, task_data []byte, task_id int) {
 	}
 	new_task.PrepareFinished = true
 	new_task.PreparedTasks <- false
-	fmt.Println("[SolveTask] Split (", new_task.SentTasksCount.Get(), ")")
+	//fmt.Println("[SolveTask] Split (", new_task.SentTasksCount.Get(), ")")
 	final_answer := <-new_task.FinalAnswer
-	fmt.Printf("[SolveTask] Final Answer: (cost: %d, jumps: %v\n", final_answer.Cost, final_answer.Jumps)
+	//fmt.Printf("[SolveTask] Final Answer: (cost: %d, jumps: %v\n", final_answer.Cost, final_answer.Jumps)
 	
 	msg := []byte(final_answer.ToXml())
 	err := binary.Write(*client.Conn, binary.LittleEndian, int64(len(msg)))
@@ -223,7 +237,8 @@ func SolveTask(client ClientInfo, task_data []byte, task_id int) {
 		return
 	}
 	(*client.Conn).Write(msg)
-	//fmt.Println("[SolveTask] Finish")
+	task_queue.PopFront()
+	fmt.Println("[SolveTask] Finish")
 }
 
 func TaskHandler(tq_item *TaskQueueItem) {
@@ -231,6 +246,7 @@ func TaskHandler(tq_item *TaskQueueItem) {
 		worker := <-free_workers_queue
 		task := <-tq_item.SubTasks
 		(*worker).CurrentTask = tq_item.ID
+		UpdateOneWorkerMinCost(worker, tq_item.ID, int(tsp_types.POSITIVE_INF))
 		msg := []byte("t" + strconv.Itoa(tq_item.ID) + " " + task.ToString())
 		err := binary.Write(*worker.Conn, binary.LittleEndian, int64(len(msg)))
 		if err != nil {
@@ -245,17 +261,17 @@ func TaskHandler(tq_item *TaskQueueItem) {
 
 func AnswerHandler(task_id int, answer_data []byte) {
 	//not_empty := <-CurrTask.ReceivedAnswers
-	fmt.Printf("[AnswerHandler] Try Receive answer: task_id: %d, queue_len: %d\n", task_id, task_queue.Len())
+	//fmt.Printf("[AnswerHandler] Try Receive answer: task_id: %d, queue_len: %d\n", task_id, task_queue.Len())
 	task := task_queue.Get(task_id)
 	if task == nil {
 		fmt.Println("[AnswerHandler] I'm not found ... ")
 		return
 	}
 	task.ReceivedAnswersCount.Inc()
-	fmt.Printf("[AnswerHandler] Receive %d answer ... ", task.ReceivedAnswersCount.Get())
+	//fmt.Printf("[AnswerHandler] Receive %d answer ... ", task.ReceivedAnswersCount.Get())
 	answer := tsp_types.AnswerType{}
 	answer.FromString(string(answer_data))
-	fmt.Printf("%d\n", answer.Cost)
+	//fmt.Printf("%d\n", answer.Cost)
 	task.SubAnswers <- &answer
 	task.PreparedAnswers <- true
 	if task.PrepareFinished && (task.ReceivedAnswersCount.Get() == task.SentTasksCount.Get()) {
@@ -267,9 +283,9 @@ func AnswerHandler(task_id int, answer_data []byte) {
 func AnswerCombiner(tq_item *TaskQueueItem) {
 	best_solution := &tsp_types.AnswerType{[]tsp_types.JumpType{}, tsp_types.POSITIVE_INF}
 	for i := 1; <-tq_item.PreparedAnswers; i++ {
-		fmt.Printf("[AnswerCombiner] 1) Combine %d answer\n", i)
+		//fmt.Printf("[AnswerCombiner] 1) Combine %d answer\n", i)
 		possible_solution := <-tq_item.SubAnswers
-		fmt.Printf("[AnswerCombiner] 2) Combine %d answer\n", i)
+		//fmt.Printf("[AnswerCombiner] 2) Combine %d answer\n", i)
 		if (possible_solution.Cost != tsp_types.POSITIVE_INF) && (possible_solution.Cost < best_solution.Cost) {
 			tq_item.CurrMinCost.Set(possible_solution.Cost)
 			UpdateMinCost(tq_item.ID, int(possible_solution.Cost))

@@ -7,8 +7,6 @@ import (
 	tsp_types "tsp/types"
 )
 
-var branch_count int = 0
-
 func print_square_matrix(matrix tsp_types.MatrixType, n int) {
 	f, err := os.Create("./res01.txt")
 	if err != nil {
@@ -274,7 +272,6 @@ func SolveImpl(task tsp_types.TaskType, gl_min_cost *tsp_types.GlobalCostType) (
 	//fmt.Printf("[SolveImpl] %d\n", SolveImpl_counter)
 	//fmt.Printf("[SolveImpl] Task y mapping: %v\n", task.YMapping)
 	//fmt.Printf("[SolveImpl] Task jumps: %v\n", task.Jumps)
-	branch_count++
 	if gl_min_cost.Get() < task.MinCost {
 		return tsp_types.ERROR_ANSWER, false
 	}
@@ -357,6 +354,7 @@ func SolveImpl(task tsp_types.TaskType, gl_min_cost *tsp_types.GlobalCostType) (
 
 func CrusherImpl(task *tsp_types.TaskType) (bool, *tsp_types.TaskType, *tsp_types.TaskType) {
 	//crusher_counter++
+	//fmt.Println("[CrusherImpl] MinCost = ", int(task.MinCost))
 	//fmt.Printf("[CrusherImpl] (%d) size : %d, matrix size %d\n", crusher_counter, task.Size, len(task.Matrix))
 	success, additional_cost := calculate_plus_cost(*task.Matrix, task.Size)
 	if success != true {

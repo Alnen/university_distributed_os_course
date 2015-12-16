@@ -214,7 +214,7 @@ func (task *TaskType) FromString(data string) {
 	matrix := make(MatrixType, size*size)
 	row_mapping := make([]int, size)
 	col_mapping := make([]int, size)
-	fmt.Println("[FROM STRING]: data_vec.size = ", len(data_vec), " | ", (1 + (size+2)*size))
+	//fmt.Println("[FROM STRING]: data_vec.size = ", len(data_vec), " | ", (1 + (size+2)*size))
 	/*
 	if len(data_vec) <= (1 + (size+2)*size) {
 		fmt.Printf("[FROM STRING]: size: %d\n", size)
@@ -252,7 +252,7 @@ func (task *TaskType) FromString(data string) {
 		jumps[j].Destination, _ = strconv.Atoi(data_vec[i+1])
 		j++
 	}
-	fmt.Printf("[FROM STRING]: size: %d\n", size)
+	//fmt.Printf("[FROM STRING]: size: %d\n", size)
 	//fmt.Printf("[FromString] row_mapping: %v\n", row_mapping)
 	//fmt.Printf("[FromString] col_mapping: %v\n", row_mapping)
 	//fmt.Printf("[FromString] Jumps: %v\n", jumps)
