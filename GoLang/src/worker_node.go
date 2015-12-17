@@ -2,15 +2,15 @@ package main
 
 import (
 	//"bufio"
+	"encoding/binary"
 	"fmt"
+	//"io"
 	"log"
 	"net"
-	//"io"
 	"os"
 	"runtime"
 	"strconv"
 	"strings"
-	"encoding/binary"
 	tsp_solver "tsp/solver"
 	tsp_types "tsp/types"
 )
@@ -18,39 +18,24 @@ import (
 type WorkerCmdType int
 
 type CurrTaskInfo struct {
-	TaskID int
+	TaskID  int
 	MinCost tsp_types.GlobalCostType
 }
 
 var answer_count int = 0
 
-func print_matrix(task *tsp_types.TaskType) {
-	fmt.Println("---------- MATRIX ---------")
-	for i := 0; i < task.Size; i++ {
-		for j := 0; j < task.Size; j++ {
-			fmt.Printf("%11d", int((*task.Matrix)[i*task.Size+j]))
-		}
-		fmt.Printf("\n")
-	}
-	fmt.Println("---------------------------")
-}
-
 func solve_task(task_data string, conn *net.Conn, logger *log.Logger, curr_task_info *CurrTaskInfo) {
-	//fmt.Println("NEW TASK RECEIVED ...")
-	//fmt.Printf("[solve_task]: \"%s\"\n", task_data)
 	task := &tsp_types.TaskType{}
 	task.FromString(task_data)
-	//fmt.Println("Task size: ", task.Size, " matrix: ", len(*task.Matrix))
-	//print_matrix(task)
 	answer_count++
 	//fmt.Printf("Calc answer (%d) ... ", answer_count)
 	answer, _ := tsp_solver.SolveImpl(*task, &curr_task_info.MinCost)
-	logger.Printf("Calc answer (%d) ... %d\n", answer_count, answer.Cost)
+	logger.Printf("Calc answer (%d) for task %d ... %d\n", answer_count, curr_task_info.TaskID, answer.Cost)
 	//fmt.Printf("%d ... ", answer.Cost)
 	byte_answer := []byte(answer.ToString())
 	err := binary.Write(*conn, binary.LittleEndian, int64(len(byte_answer)))
 	if err != nil {
-	    logger.Printf("Write data error: %v", err)
+		logger.Printf("Write data error: %v", err)
 		return
 	}
 	curr_task_info.TaskID = -1
@@ -60,30 +45,19 @@ func solve_task(task_data string, conn *net.Conn, logger *log.Logger, curr_task_
 
 func listen_server(conn *net.Conn, logger *log.Logger, curr_task_info *CurrTaskInfo) {
 	for {
-		/*
-		line := make([]byte, 4096)
-		actual_size, err := (*conn).Read(line)
-		if err != nil {
-			logger.Printf("reading error: %v", err)
-			return
-		}
-		*/
-		//fmt.Println("[listen_server] data_size: ", data_size)
 		var data_size int64
 		err := binary.Read(*conn, binary.LittleEndian, &data_size)
 		if err != nil {
-		   	logger.Printf("Reading data size (client) error: %v\n", err)
+			logger.Printf("Reading data size (client) error: %v\n", err)
 			return
 		}
-		fmt.Println("")
-		//fmt.Println("[listen_server] data_size: ", data_size)
+		logger.Printf("Read new data\n")
 		data := make([]byte, data_size)
-		_ , err = (*conn).Read(data)
+		_, err = (*conn).Read(data)
 		switch string(data[0]) {
 		case "q":
 			return
 		case "m":
-			fmt.Println("NEW MIN COST 1")
 			param_vec := strings.Split(string(data[1:]), " ")
 			if len(param_vec) != 2 {
 				logger.Println("min cost error: param count != 2")
@@ -91,20 +65,18 @@ func listen_server(conn *net.Conn, logger *log.Logger, curr_task_info *CurrTaskI
 			}
 			task_id, err := strconv.Atoi(param_vec[0])
 			if err != nil {
-				logger.Printf("task id convert error: %v", err)
+				logger.Printf("task id convert error: %v\n", err)
 				return
 			}
 			min_cost, err := strconv.Atoi(param_vec[1])
 			if err != nil {
-				logger.Printf("min cost convert error: %v", err)
+				logger.Printf("min cost convert error: %v\n", err)
 				return
 			}
 			if curr_task_info.TaskID < 0 {
-				fmt.Println("NEW MIN COST 3")
 				curr_task_info.TaskID = task_id
 				curr_task_info.MinCost.Set(tsp_types.DataType(min_cost))
 			} else if task_id == curr_task_info.TaskID {
-				fmt.Println("NEW MIN COST 2")
 				curr_task_info.MinCost.Set(tsp_types.DataType(min_cost))
 			}
 		default:
@@ -112,7 +84,7 @@ func listen_server(conn *net.Conn, logger *log.Logger, curr_task_info *CurrTaskI
 			sep_index := strings.Index(task_str, " ")
 			new_task_id, err := strconv.Atoi(task_str[:sep_index])
 			if err != nil {
-				logger.Printf("curr task id convert error: %v", err)
+				logger.Printf("curr task id convert error: %v\n", err)
 				return
 			}
 			curr_task_info.TaskID = new_task_id

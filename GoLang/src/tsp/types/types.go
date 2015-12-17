@@ -214,15 +214,11 @@ func (task *TaskType) FromString(data string) {
 	matrix := make(MatrixType, size*size)
 	row_mapping := make([]int, size)
 	col_mapping := make([]int, size)
-	//fmt.Println("[FROM STRING]: data_vec.size = ", len(data_vec), " | ", (1 + (size+2)*size))
-	/*
-	if len(data_vec) <= (1 + (size+2)*size) {
-		fmt.Printf("[FROM STRING]: size: %d\n", size)
-		fmt.Printf("[FROM STRING]: data_vec: %d\n", len(data_vec))
-		fmt.Printf("[FROM STRING]: data_str: \"%d\"\n", len([]byte(data)))
+	//fmt.Println("[task.FromString] data_len: ", len(data_vec), " size: ", size)
+	jumps_len, err := strconv.Atoi(data_vec[1+(size+2)*size])
+	if err != nil {
+		fmt.Printf("task.FromString jump_len (%d) error: %v\n", len(data_vec), err)
 	}
-	*/
-	jumps_len, _ := strconv.Atoi(data_vec[1+(size+2)*size])
 	jumps := make([]JumpType, jumps_len)
 	curr_cost, err := strconv.Atoi(data_vec[vec_size-2])
 	if err != nil {
@@ -252,12 +248,6 @@ func (task *TaskType) FromString(data string) {
 		jumps[j].Destination, _ = strconv.Atoi(data_vec[i+1])
 		j++
 	}
-	//fmt.Printf("[FROM STRING]: size: %d\n", size)
-	//fmt.Printf("[FromString] row_mapping: %v\n", row_mapping)
-	//fmt.Printf("[FromString] col_mapping: %v\n", row_mapping)
-	//fmt.Printf("[FromString] Jumps: %v\n", jumps)
-	//fmt.Printf("[FromString] CurrCost: %d\n", curr_cost)
-	//fmt.Printf("[FromString] MinCost: %d\n", min_cost)
 	task.Matrix = &matrix
 	task.RowMapping = row_mapping
 	task.ColMapping = col_mapping
@@ -265,15 +255,6 @@ func (task *TaskType) FromString(data string) {
 	task.CurrCost = DataType(curr_cost)
 	task.MinCost = DataType(min_cost)
 	task.Size = size
-	/*
-		fmt.Println("Matrix size: ", len(task.Matrix))
-		fmt.Println("XMapping size: ", len(task.XMapping))
-		fmt.Println("YMapping size: ", len(task.YMapping))
-		fmt.Printf("Jumps: %v\n", task.Jumps)
-		fmt.Println("Solution_cost: ", int(task.SolutionCost))
-		fmt.Println("MinCost: ", int(task.MinCost))
-		fmt.Println("Size: ", task.Size)
-	*/
 }
 
 // ----------------- MatrixType -----------------

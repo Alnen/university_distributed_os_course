@@ -1,15 +1,11 @@
 package task_manager
 
 import (
-	//"bufio"
-	"fmt"
-	"math/rand"
-	"net"
-	"time"
-	//"os"
 	"container/list"
-	"strconv"
 	"encoding/binary"
+	"fmt"
+	"net"
+	//"strconv"
 	tsp_solver "tsp/solver"
 	tsp_types "tsp/types"
 )
@@ -85,6 +81,7 @@ func (tq *TaskQueue) Get(task_id int) *TaskQueueItem {
 		}
 	}
 	tq.mutex <- true
+	fmt.Println("[TaskQueue.Get] task_id = ", task_id)
 	return nil
 }
 
@@ -103,15 +100,27 @@ func (tq *TaskQueue) PushBack(new_item *TaskQueueItem) {
 
 func (tq *TaskQueue) PopFront() {
 	<-tq.mutex
-	tq.tasks.Remove(tq.tasks.Back())
+	tq.tasks.Remove(tq.tasks.Front())
+	tq.mutex <- true
+}
+
+func (tq *TaskQueue) Remove(task_id int) {
+	<-tq.mutex
+	for el := tq.tasks.Front(); el != nil; el = el.Next() {
+		task := el.Value.(*TaskQueueItem)
+		if task.ID == task_id {
+			tq.tasks.Remove(el)
+			tq.mutex <- true
+			return
+		}
+	}
 	tq.mutex <- true
 }
 
 // ---------------------------------------------------------
 
 var (
-	task_queue TaskQueue
-	//CurrTask           *TaskQueueItem
+	task_queue         TaskQueue
 	free_workers_queue chan *WorkerInfo
 	workers_list       *list.List
 	clients_list       *list.List
@@ -119,23 +128,11 @@ var (
 )
 
 func CreateTaskManager() {
-	//tasks_queue.Init()
 	free_workers_queue = make(chan *WorkerInfo, 100)
 	ch_quit = make(chan bool, 1)
 	workers_list = list.New()
 	clients_list = list.New()
 	task_queue.Init()
-	//CurrTask = nil
-	/*
-		for {
-			select {
-			case <-ch_quit:
-				return
-			default:
-				ProcessingTask()
-			}
-		}
-	*/
 }
 
 func AddNewWorker(worker *WorkerInfo) {
@@ -158,7 +155,7 @@ func UpdateMinCost(task_id int, min_cost int) {
 			msg := []byte(fmt.Sprintf("m%d %d", task_id, min_cost))
 			err := binary.Write(*worker.Conn, binary.LittleEndian, int64(len(msg)))
 			if err != nil {
-			    fmt.Printf("[UpdateMinCost] Write data error: %v", err)
+				fmt.Printf("[UpdateMinCost] Write data error: %v\n", err)
 				return
 			}
 			(*worker.Conn).Write(msg)
@@ -173,7 +170,7 @@ func UpdateOneWorkerMinCost(worker *WorkerInfo, task_id int, min_cost int) {
 			msg := []byte(fmt.Sprintf("m%d %d", task_id, min_cost))
 			err := binary.Write(*worker.Conn, binary.LittleEndian, int64(len(msg)))
 			if err != nil {
-			    fmt.Printf("[UpdateOneWorkerMinCost] Write data error: %v", err)
+				fmt.Printf("[UpdateOneWorkerMinCost] Write data error: %v\n", err)
 				return
 			}
 			(*worker.Conn).Write(msg)
@@ -182,28 +179,10 @@ func UpdateOneWorkerMinCost(worker *WorkerInfo, task_id int, min_cost int) {
 	}
 }
 
-func print_matrix(matrix *tsp_types.MatrixType, size int) {
-	fmt.Println("---------- MATRIX ---------")
-	for i := 0; i < size; i++ {
-		for j := 0; j < size; j++ {
-			fmt.Printf("%11d", int((*matrix)[i*size+j]))
-		}
-		fmt.Printf("\n")
-	}
-	fmt.Println("---------------------------")
-}
-
 func SolveTask(client ClientInfo, task_data []byte, task_id int) {
-	//CurrTask = &TaskQueueItem{}
-	//CurrTask.Init(0)
 	fmt.Println("SolveTask: Start")
-	//task := generate_random_task_of_size_n(30, 100)
 	task := tsp_types.TaskType{}
 	task.FromXml(task_data)
-	//print_matrix(task.Matrix, task.Size)
-	fmt.Println("SolveTask: Rand ", task.Size, len(*task.Matrix))
-
-	//print_matrix(task.Matrix, task.Size)
 
 	new_task := &TaskQueueItem{}
 	new_task.Init(task_id)
@@ -215,9 +194,6 @@ func SolveTask(client ClientInfo, task_data []byte, task_id int) {
 	//split
 	enabled, task1, task2 := tsp_solver.CrusherImpl(&task)
 	for enabled {
-		//print_matrix(task1.Matrix, task1.Size)
-		//fmt.Printf("CurrCost: %d, MinCost: %d\n", task1.CurrCost, task1.MinCost)
-		//fmt.Printf("CurrCost: %d, MinCost: %d, Jumps: %v\n", task2.CurrCost, task2.MinCost, task2.Jumps)
 		new_task.SubTasks <- task1
 		new_task.SentTasksCount.Inc()
 		new_task.PreparedTasks <- true
@@ -226,18 +202,16 @@ func SolveTask(client ClientInfo, task_data []byte, task_id int) {
 	}
 	new_task.PrepareFinished = true
 	new_task.PreparedTasks <- false
-	//fmt.Println("[SolveTask] Split (", new_task.SentTasksCount.Get(), ")")
 	final_answer := <-new_task.FinalAnswer
-	//fmt.Printf("[SolveTask] Final Answer: (cost: %d, jumps: %v\n", final_answer.Cost, final_answer.Jumps)
-	
+
 	msg := []byte(final_answer.ToXml())
 	err := binary.Write(*client.Conn, binary.LittleEndian, int64(len(msg)))
 	if err != nil {
-	    fmt.Printf("[SolveTask] Write data error: %v", err)
+		fmt.Printf("[SolveTask] Write data error: %v", err)
 		return
 	}
 	(*client.Conn).Write(msg)
-	task_queue.PopFront()
+	task_queue.Remove(new_task.ID)
 	fmt.Println("[SolveTask] Finish")
 }
 
@@ -247,21 +221,19 @@ func TaskHandler(tq_item *TaskQueueItem) {
 		task := <-tq_item.SubTasks
 		(*worker).CurrentTask = tq_item.ID
 		UpdateOneWorkerMinCost(worker, tq_item.ID, int(tsp_types.POSITIVE_INF))
-		msg := []byte("t" + strconv.Itoa(tq_item.ID) + " " + task.ToString())
+		msg := []byte(fmt.Sprintf("t%d %s", tq_item.ID, task.ToString()))
+		//msg := []byte("t" + strconv.Itoa(tq_item.ID) + " " + task.ToString())
 		err := binary.Write(*worker.Conn, binary.LittleEndian, int64(len(msg)))
 		if err != nil {
-		    fmt.Printf("[TaskHandler] Write data error: %v", err)
+			fmt.Printf("[TaskHandler] Write data error: %v", err)
 			return
 		}
 		(*worker.Conn).Write(msg)
 	}
 	fmt.Println("[TaskHandler] Finish (count: ", tq_item.SentTasksCount.Get())
-	//tq_item.ReceivedAnswers <- false
 }
 
 func AnswerHandler(task_id int, answer_data []byte) {
-	//not_empty := <-CurrTask.ReceivedAnswers
-	//fmt.Printf("[AnswerHandler] Try Receive answer: task_id: %d, queue_len: %d\n", task_id, task_queue.Len())
 	task := task_queue.Get(task_id)
 	if task == nil {
 		fmt.Println("[AnswerHandler] I'm not found ... ")
@@ -295,25 +267,4 @@ func AnswerCombiner(tq_item *TaskQueueItem) {
 	}
 	fmt.Println("[AnswerCombiner] Finish")
 	tq_item.FinalAnswer <- best_solution
-}
-
-func randInt(min int, max int) int {
-	return min + rand.Intn(max-min)
-}
-
-func generate_random_task_of_size_n(n int, modulus int) tsp_types.TaskType {
-	rand.Seed(time.Now().UTC().UnixNano())
-	var matrix tsp_types.MatrixType = make([]tsp_types.DataType, n*n)
-	mapping := make([]int, n)
-	for i := 0; i < n; i++ {
-		mapping[i] = i
-		for j := 0; j < n; j++ {
-			if i == j {
-				matrix[i*n+j] = tsp_types.POSITIVE_INF
-			} else {
-				matrix[i*n+j] = tsp_types.DataType(randInt(1, modulus))
-			}
-		}
-	}
-	return tsp_types.TaskType{&matrix, mapping, mapping, []tsp_types.JumpType{}, tsp_types.DataType(0), tsp_types.POSITIVE_INF, n}
 }

@@ -1,15 +1,15 @@
 package main
 
 import (
+	"encoding/binary"
 	"fmt"
+	"io"
 	"log"
 	"net"
-	"io"
 	"os"
 	"runtime"
 	"sync"
 	"time"
-	"encoding/binary"
 	tsp_task_manager "tsp/task_manager"
 )
 
@@ -158,7 +158,6 @@ func accept_clients(listener *net.TCPListener, wg *sync.WaitGroup) {
 		if server_state == STOPPED {
 			return
 		}
-		//fmt.Println("Server accept connections ...")
 		listener.SetDeadline(time.Now().Add(time.Duration(time.Second)))
 		conn, err := listener.Accept()
 		if err != nil {
@@ -185,7 +184,6 @@ func accept_workers(listener *net.TCPListener, wg *sync.WaitGroup) {
 		if server_state == STOPPED {
 			return
 		}
-		//fmt.Println("Server accept connections ...")
 		listener.SetDeadline(time.Now().Add(time.Duration(time.Second)))
 		conn, err := listener.Accept()
 		if err != nil {
@@ -208,15 +206,6 @@ func accept_workers(listener *net.TCPListener, wg *sync.WaitGroup) {
 
 func listen_client(client tsp_task_manager.ClientInfo) {
 	for {
-		/*
-		var data_size int64
-		err := binary.Read(*client.Conn, binary.LittleEndian, &data_size)
-		if err != nil {
-		    logger.Printf("Reading data size (client) error: %v", err)
-			return
-		}
-		data := make([]byte, data_size)
-		*/
 		var data_size int64
 		err := binary.Read(*client.Conn, binary.LittleEndian, &data_size)
 		if err != nil {
@@ -227,7 +216,7 @@ func listen_client(client tsp_task_manager.ClientInfo) {
 			}
 			return
 		}
-		fmt.Printf("Data_size: %d\n", data_size)
+		//fmt.Printf("Data_size: %d\n", data_size)
 		data := make([]byte, data_size)
 		_, err = (*client.Conn).Read(data)
 		if err != nil {
@@ -238,21 +227,8 @@ func listen_client(client tsp_task_manager.ClientInfo) {
 			}
 			return
 		}
-		//ch_logs <- ("listen_client: receive task " + string(actual_line))
 		go tsp_task_manager.SolveTask(client, data, new_task_id)
 		new_task_id++
-		/*
-			if string(line) == "quit" {
-				for e := worker_list.Front(); e != nil; e = e.Next() {
-					worker := e.Value.(WorkerInfo)
-					if client.ID == worker.CurrentTask.Client.ID {
-						//worker.CurrentTask.Client = Conn
-					}
-				}
-			} else {
-				tsp_task_manager.AddNewTask(client, line)
-			}
-		*/
 	}
 }
 
@@ -261,11 +237,11 @@ func listen_worker(worker *tsp_task_manager.WorkerInfo) {
 		var data_size int64
 		err := binary.Read(*worker.Conn, binary.LittleEndian, &data_size)
 		if err != nil {
-		    logger.Printf("Reading data size (worker) error: %v", err)
+			logger.Printf("Reading data size (worker) error: %v", err)
 			return
 		}
 		data := make([]byte, data_size)
-		_ , err = (*worker.Conn).Read(data)
+		_, err = (*worker.Conn).Read(data)
 		if err != nil {
 			logger.Printf("Reading data (worker) error: %v", err)
 			return
@@ -273,18 +249,8 @@ func listen_worker(worker *tsp_task_manager.WorkerInfo) {
 		if string(data[0]) == "q" {
 			return
 		}
-		//line = data[:actual_size]
-		//ch_logs <- ("listen_worker: receive answer" + string(line))
 		// write answer
 		tsp_task_manager.AnswerHandler((*worker).CurrentTask, data)
 		tsp_task_manager.AddFreeWorker(worker)
-		//(*worker.CurrentTask.Client.Conn).Write(line)
-		/*
-			if string(line) == "quit" {
-				tsp_task_manager.tasks_queue <- worker.CurrentTask
-			} else {
-				worker.CurrentTask.Client.Conn.Write([]byte("Connection is accepted\000"))
-			}
-		*/
 	}
 }
