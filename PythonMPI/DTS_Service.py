@@ -3,7 +3,9 @@ import sys
 import Server.Server as Server
 import numpy as np
 import DTS_SOLVER.dts_solver as dts_solver
+from struct import pack
 from lxml import etree
+
 
 __author__ = 'Alex Uzhegov'
 
@@ -66,8 +68,9 @@ if __name__ == '__main__':
 
     def frontend_callbacks_factory():
         def input_callback(data):
-            logger.info('[input_callback] Data arrived: {!r}'.format(data))
-            root = etree.fromstring(data)
+            real_data = data[8:]
+            logger.info('[input_callback] Data arrived: {!r}'.format(real_data))
+            root = etree.fromstring(real_data)
             size = int(root[0].text)
             value_generator = iter(int(x) for x in root[1].text.split())
             return size, np.array([[next(value_generator) for j in range(size)] for i in range(size)])
@@ -83,7 +86,8 @@ if __name__ == '__main__':
             root.append(matrix_element)
             xml = etree.tostring(root, pretty_print=True, xml_declaration=True)
             logger.info('[output_callback] Data sent: {}'.format(xml))
-            return xml
+            msg_size = pack('<q', len(xml))
+            return msg_size+xml
 
         return input_callback, output_callback
 
