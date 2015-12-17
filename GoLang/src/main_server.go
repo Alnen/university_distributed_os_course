@@ -51,6 +51,13 @@ var (
 )
 
 func main() {
+	tsp_task_manager.LogEnable = false
+	for i := 0; i < len(os.Args); i++ {
+		if os.Args[i] == "-l" {
+			tsp_task_manager.LogEnable = true
+			break
+		}
+	}
 	var wg_server sync.WaitGroup
 	new_client_id = 0
 	new_worker_id = 0
@@ -216,7 +223,6 @@ func listen_client(client tsp_task_manager.ClientInfo) {
 			}
 			return
 		}
-		//fmt.Printf("Data_size: %d\n", data_size)
 		data := make([]byte, data_size)
 		_, err = (*client.Conn).Read(data)
 		if err != nil {

@@ -23,15 +23,16 @@ type CurrTaskInfo struct {
 }
 
 var answer_count int = 0
+var log_enable bool
 
 func solve_task(task_data string, conn *net.Conn, logger *log.Logger, curr_task_info *CurrTaskInfo) {
 	task := &tsp_types.TaskType{}
 	task.FromString(task_data)
 	answer_count++
-	//fmt.Printf("Calc answer (%d) ... ", answer_count)
 	answer, _ := tsp_solver.SolveImpl(*task, &curr_task_info.MinCost)
-	logger.Printf("Calc answer (%d) for task %d ... %d\n", answer_count, curr_task_info.TaskID, answer.Cost)
-	//fmt.Printf("%d ... ", answer.Cost)
+	if log_enable {
+		logger.Printf("Calc answer (%d) for task %d ... %d\n", answer_count, curr_task_info.TaskID, answer.Cost)
+	}
 	byte_answer := []byte(answer.ToString())
 	err := binary.Write(*conn, binary.LittleEndian, int64(len(byte_answer)))
 	if err != nil {
@@ -40,7 +41,6 @@ func solve_task(task_data string, conn *net.Conn, logger *log.Logger, curr_task_
 	}
 	curr_task_info.TaskID = -1
 	(*conn).Write([]byte(answer.ToString()))
-	//fmt.Printf("sent\n")
 }
 
 func listen_server(conn *net.Conn, logger *log.Logger, curr_task_info *CurrTaskInfo) {
@@ -51,7 +51,11 @@ func listen_server(conn *net.Conn, logger *log.Logger, curr_task_info *CurrTaskI
 			logger.Printf("Reading data size (client) error: %v\n", err)
 			return
 		}
-		logger.Printf("Read new data\n")
+		if log_enable {
+			logger.Printf("Read new data\n")
+		} else {
+			fmt.Printf("\n")
+		}
 		data := make([]byte, data_size)
 		_, err = (*conn).Read(data)
 		switch string(data[0]) {
@@ -111,6 +115,13 @@ func start_worker(worker_id int) {
 }
 
 func main() {
+	log_enable = false
+	for i := 0; i < len(os.Args); i++ {
+		if os.Args[i] == "-l" {
+			log_enable = true
+			break
+		}
+	}
 	if len(os.Args) > 1 {
 		worker_count, err := strconv.Atoi(os.Args[1])
 		if err != nil {
@@ -130,6 +141,8 @@ func main() {
 			case "quit":
 				fmt.Println("QUIT")
 				return
+			default:
+				fmt.Println("New command: ", line)
 			}
 		}
 	}

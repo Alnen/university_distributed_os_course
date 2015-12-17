@@ -72,8 +72,8 @@ class Client:
         self.log.info("[CLIENT] Received answer.")
         return deserialize_answer(response)
 
-    def run(self):
-        task = generate_task(30)
+    def run(self, size=30):
+        task = generate_task(size)
         task_data = list(task)
         t1 = time.time()
         cost, jumps = self.solve_task(task_data)
@@ -100,4 +100,7 @@ if __name__ == '__main__':
     real_logger.addHandler(log_handler)
     real_logger.setLevel(logging.INFO)
     client = Client(log=real_logger)
-    client.run()
+    if len(sys.argv) == 1:
+        client.run()
+    else:
+        client.run(int(sys.argv[1]))

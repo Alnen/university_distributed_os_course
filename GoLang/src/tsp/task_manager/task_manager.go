@@ -125,6 +125,7 @@ var (
 	workers_list       *list.List
 	clients_list       *list.List
 	ch_quit            chan bool
+	LogEnable bool
 )
 
 func CreateTaskManager() {
@@ -230,7 +231,9 @@ func TaskHandler(tq_item *TaskQueueItem) {
 		}
 		(*worker.Conn).Write(msg)
 	}
-	fmt.Println("[TaskHandler] Finish (count: ", tq_item.SentTasksCount.Get())
+	if LogEnable {
+		fmt.Println("[TaskHandler] Finish (count: ", tq_item.SentTasksCount.Get())
+	}
 }
 
 func AnswerHandler(task_id int, answer_data []byte) {
@@ -240,14 +243,17 @@ func AnswerHandler(task_id int, answer_data []byte) {
 		return
 	}
 	task.ReceivedAnswersCount.Inc()
-	//fmt.Printf("[AnswerHandler] Receive %d answer ... ", task.ReceivedAnswersCount.Get())
 	answer := tsp_types.AnswerType{}
 	answer.FromString(string(answer_data))
-	//fmt.Printf("%d\n", answer.Cost)
+	if LogEnable {
+		fmt.Printf("[AnswerHandler] Receive %d answer ... %d\n", task.ReceivedAnswersCount.Get(), answer.Cost)
+	}
 	task.SubAnswers <- &answer
 	task.PreparedAnswers <- true
 	if task.PrepareFinished && (task.ReceivedAnswersCount.Get() == task.SentTasksCount.Get()) {
-		fmt.Println("[AnswerHandler] Finish")
+		if LogEnable {
+			fmt.Println("[AnswerHandler] Finish")
+		}
 		task.PreparedAnswers <- false
 	}
 }
@@ -255,16 +261,18 @@ func AnswerHandler(task_id int, answer_data []byte) {
 func AnswerCombiner(tq_item *TaskQueueItem) {
 	best_solution := &tsp_types.AnswerType{[]tsp_types.JumpType{}, tsp_types.POSITIVE_INF}
 	for i := 1; <-tq_item.PreparedAnswers; i++ {
-		//fmt.Printf("[AnswerCombiner] 1) Combine %d answer\n", i)
 		possible_solution := <-tq_item.SubAnswers
-		//fmt.Printf("[AnswerCombiner] 2) Combine %d answer\n", i)
 		if (possible_solution.Cost != tsp_types.POSITIVE_INF) && (possible_solution.Cost < best_solution.Cost) {
 			tq_item.CurrMinCost.Set(possible_solution.Cost)
 			UpdateMinCost(tq_item.ID, int(possible_solution.Cost))
 			best_solution = possible_solution
 		}
-		//fmt.Printf("[AnswerCombiner] Combine %d answer\n", i)
+		if LogEnable {
+			fmt.Printf("[AnswerCombiner] Combine %d answer\n", i)
+		}
 	}
-	fmt.Println("[AnswerCombiner] Finish")
+	if LogEnable {
+		fmt.Println("[AnswerCombiner] Finish")
+	}
 	tq_item.FinalAnswer <- best_solution
 }
