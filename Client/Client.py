@@ -5,6 +5,7 @@ import time
 import math
 import random
 import numpy as np
+from struct import *
 
 from lxml import etree
 
@@ -38,7 +39,7 @@ def serialize_task(matrix):
     matrix_element.text = ' '.join((str(val) for val in matrix))
     root.append(matrix_element)
 
-    xml = etree.tostring(root, pretty_print=True, xml_declaration=True)
+    xml = etree.tostring(root, pretty_print=True, xml_declaration=True, encoding="utf-8")
     print(xml.decode())
     return xml
 
@@ -61,15 +62,18 @@ class Client:
                 time.sleep(0.1)
         self.log.info("[CLIENT] Connecting done. Trying to send task...")
         task_binary = serialize_task(task)
-        s.send(task_binary)
+        msg_size = pack('<q', len(task_binary))
+        s.send(msg_size+task_binary)
         self.log.info("[CLIENT] Sending task done. Trying to receive answer...")
-        response = s.recv(4096)
+        str_size = s.recv(8)
+        int_size = unpack('<q', str_size)
+        response = s.recv(int_size[0])
         s.close()
         self.log.info("[CLIENT] Received answer.")
         return deserialize_answer(response)
 
-    def run(self):
-        task = generate_task(30)
+    def run(self, size=30):
+        task = generate_task(size)
         task_data = list(task)
         t1 = time.time()
         cost, jumps = self.solve_task(task_data)
@@ -96,4 +100,7 @@ if __name__ == '__main__':
     real_logger.addHandler(log_handler)
     real_logger.setLevel(logging.INFO)
     client = Client(log=real_logger)
-    client.run()
+    if len(sys.argv) == 1:
+        client.run()
+    else:
+        client.run(int(sys.argv[1]))
