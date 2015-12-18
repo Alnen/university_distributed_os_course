@@ -134,12 +134,34 @@ if __name__ == '__main__':
 
             return generate_new_task, answer_reducer, final_answer
 
-    def worker_task_handler(x):
-        return dts_solver.solve_impl(*x)
+    def worker_task_handlers():
+        task_mincost = {}
+
+        def update_min_value(task_id, new_min_value):
+            nonlocal task_mincost
+            min_value = task_mincost.get(task_id)
+            if min_value is None:
+                task_mincost[task_id] = dts_solver.POSITIVE_INF
+            elif new_min_value < min_value:
+                task_mincost[task_id] = new_min_value
+            return task_mincost[task_id]
+
+        def task_solver(task_id, task):
+            new_min_value = update_min_value(task_id, dts_solver.POSITIVE_INF)
+            task[5] = new_min_value
+            answer = dts_solver.solve_impl_with_speculations(*task, task_id, task_mincost)
+            del task_mincost[task_id]
+            return answer
+
+        def new_speculation(task_id, min_cost):
+            update_min_value(task_id, min_cost)
+
+        return task_solver, new_speculation
+
     server = Server.run_server(
         frontend_server_connection_info=('127.0.0.1', 6000),
         frontend_server_callback_factory=frontend_callbacks_factory,
         task_solver_func_factory=average_task_solver_functions_factory,
-        worker_task_handler=worker_task_handler,
+        task_handlers_factory=worker_task_handlers,
         log=logger
     )

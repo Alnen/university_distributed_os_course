@@ -46,9 +46,10 @@ class Task:
 
 class TaskSolverServer:
     class MPIMessageTag(enum.IntEnum):
-        TaskRequest = 0
-        TaskInfo    = 1
-        TaskAnswer  = 2
+        TaskRequest     = 0
+        TaskInfo        = 1
+        TaskAnswer      = 2
+        TaskSpeculation = 3
 
     def __init__(self, comm, task_solver_functions_factory, *args, log):
         self.task_list = dict()
@@ -199,32 +200,42 @@ def protocol_factory(server, new_input_callback, output_ready_callback, log):
 
 
 class Worker:
-    def __init__(self, comm, task_handler, *args, log):
+    def __init__(self, comm, task_handlers_factory, *args, log):
         self.conn = comm
         self.rank = comm.Get_rank()
-        self.task_handler = task_handler
+        task_solver, speculation_handler = task_handlers_factory()
+        self.new_task_handler = new_task_handler
+        self.task_solver = task_solver
+        self.speculation_handler = speculation_handler
         self.sleep_timeout = 0.01
         self.log = log
 
-    def run(self):
+    async def run(self):
         status = MPI.Status()
         while True:
-            import time
             # Receive task data
-            while not self.conn.Iprobe(MPI.ANY_SOURCE, MPI.ANY_TAG, status):
+            while not self.conn.Iprobe(source=0, tag=int(TaskSolverServer.MPIMessageTag.TaskInfo), status=status):
                 # print('[Worker({})]: Waiting for messages...'.format(self.rank))
-                time.sleep(self.sleep_timeout)
+                await asyncio.sleep(self.sleep_timeout)
             self.log.info('[Worker({})]: Receive task data'.format(self.rank))
             task_id, task = self.conn.recv(source=0, tag=int(TaskSolverServer.MPIMessageTag.TaskInfo))
+            await asyncio.sleep(0)
             # Solve
-            answer = self.task_handler(task)
+            answer = self.task_solver(task_id, task)
             # Send task answer
             self.log.info('[Worker({})]: Send task answer {}'.format(self.rank, answer))
             self.conn.send((task_id, answer), dest=0, tag=int(TaskSolverServer.MPIMessageTag.TaskAnswer))
 
+    async def speculation_listener(self):
+        status = MPI.Status()
+        while True:
+            while not self.conn.Iprobe(source=0, tag=int(TaskSolverServer.MPIMessageTag.TaskSpeculation), status=status):
+                await asyncio.sleep(self.sleep_timeout)
+            task_id, speculation_data = self.conn.recv(source=0, tag=int(TaskSolverServer.MPIMessageTag.TaskSpeculation))
+            self.speculation_handler(task_id, speculation_data)
 
 def run_server(*args, frontend_server_connection_info, frontend_server_callback_factory,
-               task_solver_func_factory, worker_task_handler, log):
+               task_solver_func_factory, task_handlers_factory, log):
     if MPI.COMM_WORLD.Get_rank() == 0:
         server = TaskSolverServer(MPI.COMM_WORLD, task_solver_func_factory, log=log)
         loop = asyncio.get_event_loop()
@@ -241,8 +252,15 @@ def run_server(*args, frontend_server_connection_info, frontend_server_callback_
         except KeyboardInterrupt:
             loop.close()
     else:
-        worker = Worker(MPI.COMM_WORLD, worker_task_handler, log=log)
+        worker = Worker(MPI.COMM_WORLD, task_handlers_factory, log=log)
+        loop = asyncio.get_event_loop()
         try:
-            worker.run()
+            loop.run_until_complete(
+                asyncio.wait([
+                    asyncio.ensure_future(worker.run()),
+                    asyncio.ensure_future(worker.speculation_listener())
+                ])
+            )
+
         except KeyboardInterrupt:
             pass

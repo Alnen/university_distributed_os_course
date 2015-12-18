@@ -2,6 +2,7 @@ import numpy as np
 import collections
 import enum
 import time
+import asyncio
 
 __author__ = 'Alex Uzhegov'
 
@@ -276,6 +277,74 @@ def solve_impl(matrix, x_mapping, y_mapping, all_jumps, solution_cost, min_cost)
         matrix[zero_with_most_weight.row][zero_with_most_weight.column] = POSITIVE_INF
 
         answer = solve_impl(matrix, x_mapping, y_mapping, all_jumps, solution_cost, min_cost)
+        # print_answer(answer, "GOT ANSWER");
+        if answer.cost < min_cost:
+            (final_path, min_cost) = answer
+
+    # return answer
+    if min_cost < POSITIVE_INF:
+        return AnswerType(final_path, min_cost)
+    else:
+        return ERROR_ANSWER
+
+
+async def solve_impl_with_speculations(matrix, x_mapping, y_mapping, all_jumps, solution_cost, min_cost, task_id, speculation_dict):
+    if matrix.shape[0] == 0 or matrix.shape[0] == 1:
+        return ERROR_ANSWER
+
+    success, additional_cost = calculate_additional_cost_and_correct_matrix(matrix)
+    if not success:
+        return ERROR_ANSWER
+
+    solution_cost += additional_cost
+    zero_with_most_weight = find_zero_with_biggest_weight(matrix)
+
+    if matrix.shape[0] == 2:
+        next_city = zero_with_most_weight.column
+        previous_city = zero_with_most_weight.row
+
+        if matrix[previous_city ^ 1][next_city ^ 1] == 0 and \
+           matrix[previous_city ^ 1][next_city] == POSITIVE_INF and \
+           matrix[previous_city][next_city ^ 1] == POSITIVE_INF:
+            final_jumps = [JumpType(
+                            x_mapping[zero_with_most_weight.row],
+                            y_mapping[zero_with_most_weight.column]
+                        ),
+                           JumpType(
+                            x_mapping[zero_with_most_weight.row ^ 1],
+                            y_mapping[zero_with_most_weight.column ^ 1]
+                        )
+            ]
+            final_jumps.extend(all_jumps)
+            return AnswerType(final_jumps, solution_cost)
+        else:
+            return ERROR_ANSWER
+    # prepare data for recursive call
+    new_matrix, new_x_mapping, new_y_mapping, new_all_jumps = generate_sub_task_data(
+        matrix, x_mapping, y_mapping, all_jumps, zero_with_most_weight
+    )
+
+    # some speculations appear
+    await asyncio.sleep(0)
+    min_cost = speculation_dict[task_id]
+    if solution_cost >= min_cost:
+        return ERROR_ANSWER
+
+    # call this function recursively
+    answer = solve_impl_with_speculations(new_matrix, new_x_mapping, new_y_mapping, new_all_jumps, solution_cost, min_cost, task_id, speculation_dict)
+
+    final_path = []
+    # print_answer(answer, "GOT ANSWER");
+    if answer.cost < min_cost:
+        (final_path, min_cost) = answer
+        # print_answer((end_of_path, min_cost), "NEW ANSWER");
+
+    # right_path
+    if solution_cost + zero_with_most_weight.weight < min_cost:
+        # correct first one
+        matrix[zero_with_most_weight.row][zero_with_most_weight.column] = POSITIVE_INF
+
+        answer = solve_impl_with_speculations(matrix, x_mapping, y_mapping, all_jumps, solution_cost, min_cost, task_id, speculation_dict)
         # print_answer(answer, "GOT ANSWER");
         if answer.cost < min_cost:
             (final_path, min_cost) = answer
