@@ -243,7 +243,7 @@ generate_sub_task_data(Matrix, RowMapping, ColMapping, AllJumps, HeaviestZero) -
     %print_matrix(NewMatrix),
     M2 = forbid_jump_if_needed(NewMatrix, NewRowMapping, NewColMapping, NewAllJumps),
     io:fwrite("solve_impl 3.2\n"),
-    print_matrix(M2),
+    %print_matrix(M2),
     #sub_task_data{matrix = M2, row_mapping = NewRowMapping,
         col_mapping = NewColMapping, jumps = NewAllJumps}.
 
@@ -263,9 +263,9 @@ solve_impl(T) -> solve_impl(T#task.size, T).
 solve_impl(0, T) -> ?ERROR_ANSWER;
 solve_impl(1, T) -> ?ERROR_ANSWER;
 solve_impl(Size, T) ->
-    io:fwrite("solve_impl 1\n"),
+    %io:fwrite("solve_impl 1\n"),
     %file:write(IODevice, "solve_impl 1\n"),
-    print_matrix(T#task.matrix),
+    %print_matrix(T#task.matrix),
     {Success, NewMatrix, PlusCost} = calculate_plus_cost(T#task.matrix),
     %io:fwrite("pass 1\n"),
     if
@@ -276,13 +276,13 @@ solve_impl(Size, T) ->
             HZ = find_heaviest_zero(NewMatrix),
             %io:fwrite("pass 2\n"),
             %io:fwrite("solve_impl 2 ~w\n",[T1#task.matrix]),
-            io:fwrite("solve_impl 2\n"),
-            print_matrix(T1#task.matrix),
+            %io:fwrite("solve_impl 2\n"),
+            %print_matrix(T1#task.matrix),
             solve_impl(Size, HZ, T1)
     end.
 solve_impl(2, HZ, T) ->
     %io:fwrite("solve_impl size == 2\n"),
-    io:fwrite("solve_impl size == 2\n"),
+    %io:fwrite("solve_impl size == 2\n"),
     NextCity = HZ#zero_info.col,
     PreviousCity = HZ#zero_info.row,
     Elem1 = get_from_matrix(T#task.matrix, PreviousCity bxor 1, NextCity bxor 1),
@@ -299,8 +299,8 @@ solve_impl(2, HZ, T) ->
         true -> ?ERROR_ANSWER
     end;
 solve_impl(Size, HZ, T)->
-    io:fwrite("solve_impl 3\n"),
-    print_matrix(T#task.matrix),
+    %io:fwrite("solve_impl 3\n"),
+    %print_matrix(T#task.matrix),
     %io:fwrite("solve_impl 3(1) size == ~w\n", [Size]),
     SubDT = generate_sub_task_data(T#task.matrix, T#task.row_mapping, T#task.col_mapping, T#task.jumps, HZ),
     T1 = #task{matrix = SubDT#sub_task_data.matrix, row_mapping = SubDT#sub_task_data.row_mapping, col_mapping = SubDT#sub_task_data.col_mapping,
@@ -308,11 +308,11 @@ solve_impl(Size, HZ, T)->
     A = solve_impl(T1),
     {FinalPath, T2} = solve_update_path([], A, T),
     %io:fwrite("solve_impl 4 ~w\n",[T2]),
-    io:fwrite("solve_impl 4\n"),
-    print_matrix(T2#task.matrix),
+    %io:fwrite("solve_impl 4\n"),
+    %print_matrix(T2#task.matrix),
     {FinalPath2, T3} = solve_right_path(T2, HZ, FinalPath),
-    io:fwrite("solve_impl 5\n"),
-    print_matrix(T3#task.matrix),
+    %io:fwrite("solve_impl 5\n"),
+    %print_matrix(T3#task.matrix),
     %io:fwrite("solve_impl 5 ~w\n",[T3]),
     if
         T3#task.min_cost < ?POSITIVE_INF ->
@@ -329,8 +329,8 @@ crusher_impl(T) ->
             HZ = find_heaviest_zero(NewMatrix),
             SubDT = generate_sub_task_data(NewMatrix, T#task.row_mapping, T#task.col_mapping, T#task.jumps, HZ),
             %io:fwrite("solve_impl 3 ~w\n", [SubDT#sub_task_data.matrix]),
-            io:fwrite("solve_impl 3\n"),
-            print_matrix(SubDT#sub_task_data.matrix),
+            %io:fwrite("solve_impl 3\n"),
+            %print_matrix(SubDT#sub_task_data.matrix),
             {
                 true,
                 #task{matrix = SubDT#sub_task_data.matrix, row_mapping = SubDT#sub_task_data.row_mapping, col_mapping = SubDT#sub_task_data.col_mapping,
