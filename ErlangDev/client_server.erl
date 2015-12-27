@@ -1,14 +1,15 @@
 -module(client_server).
 -include("tsp_types.hrl").
+-include_lib("xmerl/include/xmerl.hrl").
 -import(solver, [crusher_impl/1, solve_impl/1]).
--export([test_setup/0]).
+-export([test_setup/0, test_setup1/0]).
 
 %-------------------- New connection handeler ---------------------------
-start_connection_listener(Port, WorkingQueue) ->
-	spawn(fun() -> connection_listener_init(Port, WorkingQueue) end) ! {status, self()},
+start_connection_listener(WorkingQueue) ->
+	spawn(fun() -> connection_listener_init(6000, WorkingQueue) end) ! {status, self()},
 	receive
 		ok ->
-	  		io:fwrite("[CONNECTION_LISTENER~w] Listening on port ~p~n", [self(), Port]);
+	  		io:fwrite("[CONNECTION_LISTENER~w] Listening on port ~p~n", [self(), 6000]);
 		fail ->
 	  		io:fwrite("[CONNECTION_LISTENER~w] Internal error: unable to start listener~n", [self()])
 	end.
@@ -32,15 +33,15 @@ connection_listener_loop(ListenSocket, WorkingQueue) ->
 		{ok, ClientSocket} ->
   			io:fwrite("[CONNECTION_LISTENER~w] New connection [~p] accepted~n", [ClientSocket, spawn(fun() -> new_connection_handler(ClientSocket, WorkingQueue) end)]);
 		_ ->
-  			io:fwrite("[CONNECTION_LISTENER~w] Internal error: Unable to accept a connection~n")
+  			io:fwrite("[CONNECTION_LISTENER~w] Internal error: Unable to accept a connection~n", [self()])
 	catch
 		_:_ ->
-  			io:fwrite("[CONNECTION_LISTENER~w] Internal error: Unable to accept a connection~n")
+  			io:fwrite("[CONNECTION_LISTENER~w] Internal error: Unable to accept a connection~n", [self()])
 	end,
 	connection_listener_loop(ListenSocket, WorkingQueue).
 %-------------------- New connection handeler ---------------------------
 task_handler(Task, MinValue, NumberOfGeneratedTasks, NumberOfSolvedTasks, FinishedGenerationgTasks) ->
-	io:fwrite("[TASK HANDLER~w] Waiting for event~n", [self()]),
+	io:fwrite("[TASK HANDLER~w] Waiting for event. NumberOfGeneratedTasks: ~w NumberOfSolvedTasks: ~w FinishedGenerationgTasks: ~w ~n", [self(), NumberOfGeneratedTasks, NumberOfSolvedTasks, FinishedGenerationgTasks]),
 	receive
 		{new_task_request, TaskQueuePID} ->
 			io:fwrite("[TASK HANDLER~w] New task request recieved. Updating TaskInfo...~n", [self()]),
@@ -87,7 +88,8 @@ task_handler(Task, MinValue, NumberOfGeneratedTasks, NumberOfSolvedTasks, Finish
         			NewMinValue = MinValue
     		end,
 			if 
-				(FinishedGenerationgTasks =:= true) and (NumberOfSolvedTasks =:= NumberOfGeneratedTasks) ->
+				(FinishedGenerationgTasks =:= true) and 
+				((NumberOfSolvedTasks =:= NumberOfGeneratedTasks) or (NumberOfSolvedTasks + 1 =:= NumberOfGeneratedTasks)) ->
 					io:fwrite("[TASK HANDLER~w] Task solved. Starting to handle it...~n", [self()]),
 					NewMinValue;
 				true ->
@@ -96,58 +98,101 @@ task_handler(Task, MinValue, NumberOfGeneratedTasks, NumberOfSolvedTasks, Finish
 			end
 	end.
 
-new_connection_handler_test(ClientSocket, WorkingQueue) ->
-	%Deserialize
-	WorkingQueue ! {new_task, self()},
-	Matrix = [
-    [?POSITIVE_INF,            25,            40,            31,            27],
-    [            5, ?POSITIVE_INF,            17,            30,            25],
-    [           19,            15, ?POSITIVE_INF,             6,             1],
-    [            9,            50,            24, ?POSITIVE_INF,             6],
-    [           22,             8,             7,            10, ?POSITIVE_INF]],
-    Mapping = lists:seq(0, 4),
-    %find_heaviest_zero(Matrix).
-    Task = #task{matrix = Matrix, row_mapping = Mapping, col_mapping = Mapping, jumps = [],
-        curr_cost = 0, min_cost = ?POSITIVE_INF, size = 5}, 
-	Answer = task_handler(Task, #answer{jumps = [], cost = ?POSITIVE_INF}, 0, 0, false),
-	io:format("[NEW CONNECTION HANDLER]Answer ~w~n", [Answer#answer.cost]).
-
-
 new_connection_handler(ClientSocket, WorkingQueue) ->
-	%Deserialize
-	WorkingQueue ! {new_task, self()},
-	Matrix = [
-    [?POSITIVE_INF,            25,            40,            31,            27],
-    [            5, ?POSITIVE_INF,            17,            30,            25],
-    [           19,            15, ?POSITIVE_INF,             6,             1],
-    [            9,            50,            24, ?POSITIVE_INF,             6],
-    [           22,             8,             7,            10, ?POSITIVE_INF]],
-    Mapping = lists:seq(0, 4),
-    %find_heaviest_zero(Matrix).
-    Task = #task{matrix = Matrix, row_mapping = Mapping, col_mapping = Mapping, jumps = [],
-        curr_cost = 0, min_cost = ?POSITIVE_INF, size = 5}, 
-	Answer = task_handler(Task, #answer{jumps = [], cost = ?POSITIVE_INF}, 0, 0, false),
-	io:format("[NEW CONNECTION HANDLER]Answer ~w~n", [Answer#answer.cost]).
+	io:fwrite("[NEW CONNECTION HANDLER~w] Waiting for message size...~n", [self()]),
+	case gen_tcp:recv(ClientSocket, 8) of
+		{ok, SizeData} ->
+			<< MessageSize:8/little-signed-integer-unit:8>> = SizeData
+	end,
+	io:fwrite("[NEW CONNECTION HANDLER~w] Waiting for message...~n", [self()]),
+	case gen_tcp:recv(ClientSocket, MessageSize) of
+		{ok, XMLData} ->
+			% Deserialize data.
+			io:fwrite("[NEW CONNECTION HANDLER~w] Deserialize task...~n", [self()]),
+			Task = deserialize_task(XMLData),
+			io:fwrite("[NEW CONNECTION HANDLER~w] Deserialize task is :~n Matris:~n~w~nSize: ~w~n", [self(), Task#task.matrix, Task#task.size]),
+			% Notify task queue that we have new tasks.
+			io:fwrite("[NEW CONNECTION HANDLER~w] Send that we are ready to give tasks...~n", [self()]),
+			WorkingQueue ! {new_task, self()},
+			% Solve.
+			io:fwrite("[NEW CONNECTION HANDLER~w] Solve...~n", [self()]),
+			Answer = task_handler(Task, #answer{jumps = [], cost = ?POSITIVE_INF}, 0, 0, false),
+			% Serialize answer and send it back.
+			io:fwrite("[NEW CONNECTION HANDLER~w] Serializing... ~w~n", [self(), Answer]),
+			[AnswerBinDataSizeBinary, AnswerBinDataSize] = serialize_answer(Answer), 
+			io:fwrite("[NEW CONNECTION HANDLER~w] Sending...~n", [self()]),
+			gen_tcp:send(ClientSocket, AnswerBinDataSizeBinary),
+			gen_tcp:send(ClientSocket, AnswerBinDataSize),
+			io:fwrite("[NEW CONNECTION HANDLER~w] Done~n", [self()])
+	end.
 
-strtoint(Str)->
-	[begin {Int,_}=string:to_integer(Token), Int end|| Token<-string:tokens(Str," ")].
+deserialize_task(XMLData)->
+	XMLStr = unicode:characters_to_list(XMLData, utf8),
+	{Xml, _} = xmerl_scan:string(XMLStr),
+	% Parse int
+	{_, SizeBinary} = val(xmerl_xpath:string("//size", Xml)),
+	SizeString = unicode:characters_to_list(SizeBinary, utf8),
+	{Size, _} = string:to_integer(SizeString),
+	io:fwrite("[NEW CONNECTION HANDLER~w] Size:~w~n", [self(), Size]),
+	% Parse matrix
+	{_, MatrixBinary} = val(xmerl_xpath:string("//matrix", Xml)),
+	MatrixString = unicode:characters_to_list(MatrixBinary),
+	MatrixLinear = [ begin {Int,_} = string:to_integer(Token), Int end || Token<-string:tokens(MatrixString," ")],
+	Matrix = split_matrix(Size, Size, MatrixLinear),
+	io:fwrite("[NEW CONNECTION HANDLER~w] Matrix:~w~n", [self(), Matrix]),
+	Mapping = lists:seq(0, Size - 1),
+    Task = #task{matrix = Matrix, row_mapping = Mapping, col_mapping = Mapping, jumps = [],
+    			curr_cost = 0, min_cost = ?POSITIVE_INF, size = Size}.
+
+split_row_impl(0, List, Accumulator) ->
+	{List, Accumulator};
+
+split_row_impl(Size, [Element | Rest], Accumulator) ->
+	split_row_impl(Size-1, Rest, Accumulator ++ [Element]).
+
+split_row(Size, List) ->
+	split_row_impl(Size, List, []).
+
+split_matrix_impl(0, ColumnSize, [], Accumulator)->
+	Accumulator;
+
+split_matrix_impl(RowSize, ColumnSize, Matrix, Accumulator)->
+	{RestMatrix, Row} = split_row(ColumnSize, Matrix),
+	split_matrix_impl(RowSize - 1, ColumnSize, RestMatrix, Accumulator ++ [Row]).
+
+split_matrix(RowSize, ColumnSize, Matrix)->
+	split_matrix_impl(RowSize, ColumnSize, Matrix, []).
+
+serialize_answer(Answer)->
+	AnswerBinData = creatXml(Answer),
+	AnswerBinDataSize = length(AnswerBinData),
+	AnswerBinDataSizeBinary = << AnswerBinDataSize:8/little-signed-integer-unit:8 >>,
+	[AnswerBinDataSizeBinary, AnswerBinData].
+
 val(X) ->
 	[#xmlElement{name = N, content = [#xmlText{value = V}|_]}] = X,
 	{N, V}.
 
-serialize(Data) ->
-	Xml = lists:flatten(xmerl:export_simple(Data, xmerl_xml)).
+creatXml(Answer)->
+  	RootElem = {array, [
+					{cost, [integer_to_list(Answer#answer.cost)]}, 
+					{jumps, [serialize_jumps(Answer#answer.jumps)]}
+				]},
+  	lists:flatten(xmerl:export_simple([RootElem], xmerl_xml)).
 
-creatXml(Inpsize, Inpid, Inparray)->
-  	RootElem = {qucksortCall, [{size, [Inpsize]}, {id, [Inpid]}, {array, [Inparray]}]},
-  	serialize([RootElem]).
+serialize_rest_jumps([], Accumulator) ->
+  	Accumulator;
 
-inttostr([])->
-  	"";
-inttostr([Pivot|Tail])->
-  	if length(Tail)==0 -> string:concat(integer_to_list(Pivot), inttostr(Tail));
-    	true -> string:concat(integer_to_list(Pivot), ","++inttostr(Tail))
-  	end.
+serialize_rest_jumps([Jump | Tail], Accumulator) ->
+	SubString = "," ++ integer_to_list(Jump#jump.source) ++ "-" ++ integer_to_list(Jump#jump.destination),
+	serialize_rest_jumps(Tail, Accumulator ++ SubString).
+
+serialize_jumps([]) ->
+	"";
+
+serialize_jumps([Jump | Tail]) ->
+	SubString = integer_to_list(Jump#jump.source) ++ "-" ++ integer_to_list(Jump#jump.destination),
+	serialize_rest_jumps(Tail, SubString).
 %-------------------- Worker Queue ---------------------------
 task_queue(State, FreeWorkerQueue) ->
 	if 
@@ -213,9 +258,12 @@ test_setup() ->
 	FreeWorkerQueuePID = spawn(fun() -> free_worker_queue() end),
 	TaskQueuePID = spawn(fun() -> task_queue(waiting_for_generator, FreeWorkerQueuePID) end),
 	io:format("[INITIALIZATION COMPLETED]~n"),
-	WorkerPID = spawn(fun() -> worker(FreeWorkerQueuePID) end), 
-	new_connection_handler([], TaskQueuePID).
+	spawn(fun()-> start_connection_listener(TaskQueuePID) end),
+	WorkerPID = spawn(fun() -> worker(FreeWorkerQueuePID) end).
+	%{ok, [X]} = io:fread("How many Hellos?> ", "~d").
 
+test_setup1() -> 
+	start_connection_listener([]).
 
 
 

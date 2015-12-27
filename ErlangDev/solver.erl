@@ -108,7 +108,9 @@ cpc_update_line([?POSITIVE_INF | Rest], NewL, MV) -> cpc_update_line(Rest, NewL+
 cpc_update_line([Elem | Rest], NewL, MV) -> cpc_update_line(Rest, NewL++[(Elem-MV)], MV).
 
 cpc_cost_for_line(true, [], NewMatrix, _, _ , Cost) -> {true, NewMatrix, Cost};
-cpc_cost_for_line(false, _, NewMatrix, _, _, Cost) -> io:fwrite("[cadasd] yuo asdasd: ~w\n",[Cost]), {false, NewMatrix, Cost};
+cpc_cost_for_line(false, _, NewMatrix, _, _, Cost) -> 
+    %io:fwrite("[cadasd] yuo asdasd: ~w\n",[Cost]), 
+    {false, NewMatrix, Cost};
 cpc_cost_for_line(true, [Elem | Rest], NewMatrix, ElemIndex, MV, Cost) ->
     {IsError, NewMV, NewInfCount} = cpc_min_value(Elem, 0, ?POSITIVE_INF, 0),
     NewRow = cpc_update_line(Elem, [], NewMV),
@@ -225,7 +227,9 @@ forbid_jump_if_needed(M, RowMapping, ColMapping, [J | JumpsRest]) ->
             %io:fwrite("row = ~w, ",[RowIndex]),
             %io:fwrite("col = ~w\n", [ColIndex]),
             set_to_matrix(M, RowIndex, ColIndex, ?POSITIVE_INF);
-        true -> io:fwrite("cond 2\n"), M
+        true -> 
+            %io:fwrite("cond 2\n"), 
+            M
     end.
 
 %----------------- generate_sub_task_data --------------------
@@ -242,7 +246,7 @@ generate_sub_task_data(Matrix, RowMapping, ColMapping, AllJumps, HeaviestZero) -
     %io:fwrite("solve_impl 3.1\n"),
     %print_matrix(NewMatrix),
     M2 = forbid_jump_if_needed(NewMatrix, NewRowMapping, NewColMapping, NewAllJumps),
-    io:fwrite("solve_impl 3.2\n"),
+    %io:fwrite("solve_impl 3.2\n"),
     %print_matrix(M2),
     #sub_task_data{matrix = M2, row_mapping = NewRowMapping,
         col_mapping = NewColMapping, jumps = NewAllJumps}.
