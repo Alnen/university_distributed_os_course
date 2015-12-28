@@ -1,12 +1,12 @@
--module(client_server).
+-module(server).
 -include("tsp_types.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
 -import(solver, [crusher_impl/1, solve_impl/1]).
--export([test_setup/0, test_setup1/0]).
+-export([init_server/1]).
 
 %-------------------- New connection handeler ---------------------------
-start_connection_listener(WorkingQueue) ->
-	spawn(fun() -> connection_listener_init(6000, WorkingQueue) end) ! {status, self()},
+start_connection_listener(WorkingQueue, SpeclulationManagerPID) ->
+	spawn(fun() -> connection_listener_init(6000, WorkingQueue, SpeclulationManagerPID) end) ! {status, self()},
 	receive
 		ok ->
 	  		io:fwrite("[CONNECTION_LISTENER~w] Listening on port ~p~n", [self(), 6000]);
@@ -14,12 +14,12 @@ start_connection_listener(WorkingQueue) ->
 	  		io:fwrite("[CONNECTION_LISTENER~w] Internal error: unable to start listener~n", [self()])
 	end.
 
-connection_listener_init(Port, WorkingQueue) ->
+connection_listener_init(Port, WorkingQueue, SpeclulationManagerPID) ->
 	receive {status, ServerPid} ->
 		try gen_tcp:listen(Port, [binary, {packet, 0}, {reuseaddr, true}, {active, false}, {ip, {0,0,0,0}}]) of
   			{ok, Socket} ->
 	    		ServerPid ! ok,
-	    		connection_listener_loop(Socket, WorkingQueue);
+	    		connection_listener_loop(Socket, WorkingQueue, SpeclulationManagerPID);
 	  		_ ->
 	    		ServerPid ! fail
 		catch
@@ -28,19 +28,19 @@ connection_listener_init(Port, WorkingQueue) ->
 		end
 	end.
 
-connection_listener_loop(ListenSocket, WorkingQueue) ->
+connection_listener_loop(ListenSocket, WorkingQueue, SpeclulationManagerPID) ->
 	try gen_tcp:accept(ListenSocket) of
 		{ok, ClientSocket} ->
-  			io:fwrite("[CONNECTION_LISTENER~w] New connection [~p] accepted~n", [ClientSocket, spawn(fun() -> new_connection_handler(ClientSocket, WorkingQueue) end)]);
+  			io:fwrite("[CONNECTION_LISTENER~w] New connection [~p] accepted~n", [ClientSocket, spawn(fun() -> new_connection_handler(ClientSocket, WorkingQueue, SpeclulationManagerPID) end)]);
 		_ ->
   			io:fwrite("[CONNECTION_LISTENER~w] Internal error: Unable to accept a connection~n", [self()])
 	catch
 		_:_ ->
   			io:fwrite("[CONNECTION_LISTENER~w] Internal error: Unable to accept a connection~n", [self()])
 	end,
-	connection_listener_loop(ListenSocket, WorkingQueue).
+	connection_listener_loop(ListenSocket, WorkingQueue, SpeclulationManagerPID).
 %-------------------- New connection handeler ---------------------------
-task_handler(Task, MinValue, NumberOfGeneratedTasks, NumberOfSolvedTasks, FinishedGenerationgTasks) ->
+task_handler(SpeclulationManagerPID, Task, MinValue, NumberOfGeneratedTasks, NumberOfSolvedTasks, FinishedGenerationgTasks) ->
 	io:fwrite("[TASK HANDLER~w] Waiting for event. NumberOfGeneratedTasks: ~w NumberOfSolvedTasks: ~w FinishedGenerationgTasks: ~w ~n", [self(), NumberOfGeneratedTasks, NumberOfSolvedTasks, FinishedGenerationgTasks]),
 	receive
 		{new_task_request, TaskQueuePID} ->
@@ -66,7 +66,7 @@ task_handler(Task, MinValue, NumberOfGeneratedTasks, NumberOfSolvedTasks, Finish
 					io:fwrite("[TASK HANDLER~w] Sending of ok message done. Sending of new_task message...~n", [self()]),
 					TaskQueuePID ! {new_task, self()},
 					io:fwrite("[TASK HANDLER~w] Sending of new_task message done.~n", [self()]),
-					task_handler(RestTasks, MinValue, NumberOfGeneratedTasks+1, NumberOfSolvedTasks, FinishedGenerationgTasks);
+					task_handler(SpeclulationManagerPID, RestTasks, MinValue, NumberOfGeneratedTasks+1, NumberOfSolvedTasks, FinishedGenerationgTasks);
 				true ->
 					io:fwrite("[TASK HANDLER~w] Crusher_impl failed to generate new task. Sending failed message...~n", [self()]),
 					TaskQueuePID ! {failed},
@@ -76,13 +76,14 @@ task_handler(Task, MinValue, NumberOfGeneratedTasks, NumberOfSolvedTasks, Finish
 							io:fwrite("[TASK HANDLER~w] Task solved. Starting to handle it...~n", [self()]),
 							MinValue;
 						true ->
-							task_handler(RestTasks, MinValue, NumberOfGeneratedTasks, NumberOfSolvedTasks, true)
+							task_handler(SpeclulationManagerPID, RestTasks, MinValue, NumberOfGeneratedTasks, NumberOfSolvedTasks, true)
 					end
 			end;
 		{handle_new_answer, NewAnswer} ->
 			io:fwrite("[TASK HANDLER~w] New answer arrived. Starting to handle it ~w...~n", [self(), NewAnswer#answer.cost]),
 			if
 				MinValue#answer.cost > NewAnswer#answer.cost ->
+					SpeclulationManagerPID ! {send_speculation, self(), NewAnswer#answer.cost},
             		NewMinValue = NewAnswer;
         		true -> 
         			NewMinValue = MinValue
@@ -94,11 +95,11 @@ task_handler(Task, MinValue, NumberOfGeneratedTasks, NumberOfSolvedTasks, Finish
 					NewMinValue;
 				true ->
 					io:fwrite("[TASK HANDLER~w] Although subtask solved. Task not solved.~n", [self()]),
-					task_handler(Task, NewMinValue, NumberOfGeneratedTasks, NumberOfSolvedTasks+1, FinishedGenerationgTasks)		
+					task_handler(SpeclulationManagerPID, Task, NewMinValue, NumberOfGeneratedTasks, NumberOfSolvedTasks+1, FinishedGenerationgTasks)		
 			end
 	end.
 
-new_connection_handler(ClientSocket, WorkingQueue) ->
+new_connection_handler(ClientSocket, WorkingQueue, SpeclulationManagerPID) ->
 	io:fwrite("[NEW CONNECTION HANDLER~w] Waiting for message size...~n", [self()]),
 	case gen_tcp:recv(ClientSocket, 8) of
 		{ok, SizeData} ->
@@ -114,9 +115,11 @@ new_connection_handler(ClientSocket, WorkingQueue) ->
 			% Notify task queue that we have new tasks.
 			io:fwrite("[NEW CONNECTION HANDLER~w] Send that we are ready to give tasks...~n", [self()]),
 			WorkingQueue ! {new_task, self()},
+			SpeclulationManagerPID ! {register_task, self()},
 			% Solve.
 			io:fwrite("[NEW CONNECTION HANDLER~w] Solve...~n", [self()]),
-			Answer = task_handler(Task, #answer{jumps = [], cost = ?POSITIVE_INF}, 0, 0, false),
+			Answer = task_handler(SpeclulationManagerPID, Task, #answer{jumps = [], cost = ?POSITIVE_INF}, 0, 0, false),
+			SpeclulationManagerPID ! {deregister_task, self()},
 			% Serialize answer and send it back.
 			io:fwrite("[NEW CONNECTION HANDLER~w] Serializing... ~w~n", [self(), Answer]),
 			[AnswerBinDataSizeBinary, AnswerBinDataSize] = serialize_answer(Answer), 
@@ -240,30 +243,86 @@ free_worker_queue() ->
 	end,
 	free_worker_queue().
 %-------------------- Worker ---------------------------
-worker(FreeWorkerQueue) ->
+worker(SpeclulationManagerPID, FreeWorkerQueue) ->
 	io:fwrite("[WORKER~w] Sending to FreeWorkerQueue that i'm free~n", [self()]),
 	FreeWorkerQueue ! {new_free_worker, self()},
 	io:fwrite("[WORKER~w] Waiting for task~n", [self()]),
 	receive
 		{do_task, {TaskHandlerPID, Task}} ->
 			io:fwrite("[WORKER~w] Got new task, solving it...~n", [self()]),
-			Answer = solve_impl(Task),
+			SpeclulationManagerPID ! {register_worker, TaskHandlerPID, self(), Task#task.min_cost},
+			Answer = solver:solve_impl_with_speculations(TaskHandlerPID, Task),
+			SpeclulationManagerPID ! {deregister_worker, TaskHandlerPID, self()},
 			io:fwrite("[WORKER~w] Done new task, sending answer ~w...~n", [self(), Answer#answer.cost]),
+			SpeclulationManagerPID ! {deregister_worker, TaskHandlerPID, self()},
 			TaskHandlerPID ! {handle_new_answer, Answer}
 	end,
 	io:fwrite("[WORKER~w] Done sending answer~n", [self()]),
-	worker(FreeWorkerQueue).
+	worker(SpeclulationManagerPID, FreeWorkerQueue).
+
+%-------------------- Worker ---------------------------
+speculation_manager(RegisteredTasks) ->
+	io:fwrite("[SPECULATION MANAGER~w] Current tasks ~w. Waiting for message...~n", [self(), RegisteredTasks]),
+	receive
+		{register_task, HandlerPID} ->
+			io:fwrite("[SPECULATION MANAGER~w] Registered task with PID : ~w...~n", [self(), HandlerPID]),
+			NewRegisteredTasks = RegisteredTasks ++ [{HandlerPID, []}];
+		{deregister_task, HandlerPID} ->
+			io:fwrite("[SPECULATION MANAGER~w] Deregistering task with PID : ~w...~n", [self(), HandlerPID]),
+			NewRegisteredTasks = lists:keydelete(HandlerPID, 1, RegisteredTasks);
+		{send_speculation, HandlerPID, MinValue} ->
+			io:fwrite("[SPECULATION MANAGER~w] Sending speculation to workers that working on task with PID : ~w and have value greater than : ~w...~n", [self(), HandlerPID, MinValue]),
+			{_, WorkersLists} = lists:keyfind(HandlerPID, 1, RegisteredTasks),
+			UpdatedWorkers = lists:map(fun({WorkerPID, Value})->
+											if
+												Value > MinValue ->
+													io:fwrite("[SPECULATION MANAGER~w] Sending speculation to ~w with value ~w...~n", [self(), WorkerPID, MinValue]),
+													WorkerPID ! {new_min_value, HandlerPID, MinValue},
+													{WorkerPID, MinValue};
+												true ->
+													io:fwrite("[SPECULATION MANAGER~w] Old value ~w fow worker ~w is ok...~n", [self(), Value, WorkerPID]),
+													{WorkerPID, Value}
+											end
+										end,
+										WorkersLists),
+			NewRegisteredTasks = lists:keyreplace(HandlerPID, 1, RegisteredTasks, {HandlerPID, UpdatedWorkers});
+		{register_worker, HandlerPID, WorkerPID, MinValue} ->
+			io:fwrite("[SPECULATION MANAGER~w] Registering worker : ~w with value : ~w for task with PID : ~w...~n", [self(), WorkerPID, MinValue, HandlerPID]),
+			{_, WorkersLists} = lists:keyfind(HandlerPID, 1, RegisteredTasks),
+			NewRegisteredTasks = lists:keyreplace(HandlerPID, 1, RegisteredTasks, {HandlerPID, WorkersLists ++ [{WorkerPID, MinValue}]});
+		{deregister_worker, HandlerPID, WorkerPID} ->
+			io:fwrite("[SPECULATION MANAGER~w] Deregister worker : ~w for task with PID : ~w...~n", [self(), WorkerPID, HandlerPID]),
+			{_, WorkersLists} = lists:keyfind(HandlerPID, 1, RegisteredTasks),
+			NewRegisteredTasks = lists:keyreplace(
+				HandlerPID, 
+				1, 
+				RegisteredTasks, 
+				{
+					HandlerPID, 
+					lists:keydelete(
+						WorkerPID, 
+						1,
+						WorkersLists
+					)
+				}
+			)
+	end,
+	speculation_manager(NewRegisteredTasks).
 %-------------------- Test Setup ---------------------------	
-test_setup() -> 
+init_server(N) -> 
+	SpeclulationManagerPID = spawn(fun() -> speculation_manager([]) end), 
 	FreeWorkerQueuePID = spawn(fun() -> free_worker_queue() end),
 	TaskQueuePID = spawn(fun() -> task_queue(waiting_for_generator, FreeWorkerQueuePID) end),
 	io:format("[INITIALIZATION COMPLETED]~n"),
-	spawn(fun()-> start_connection_listener(TaskQueuePID) end),
-	WorkerPID = spawn(fun() -> worker(FreeWorkerQueuePID) end).
-	%{ok, [X]} = io:fread("How many Hellos?> ", "~d").
+	spawn(fun()-> start_connection_listener(TaskQueuePID, SpeclulationManagerPID) end),
+	run_workers(SpeclulationManagerPID, FreeWorkerQueuePID, N).
 
-test_setup1() -> 
-	start_connection_listener([]).
+run_workers(SpeclulationManagerPID, FreeWorkerQueuePID, 0) -> null;
+
+run_workers(SpeclulationManagerPID, FreeWorkerQueuePID, N) ->
+	spawn(fun() -> worker(SpeclulationManagerPID, FreeWorkerQueuePID) end),
+	run_workers(SpeclulationManagerPID, FreeWorkerQueuePID, N - 1).
+
 
 
 

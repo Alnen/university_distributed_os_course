@@ -1,6 +1,6 @@
 -module(solver).
 -include("tsp_types.hrl").
--export([test1/0, crusher_impl/1, solve_impl/1]).
+-export([test1/0, crusher_impl/1, solve_impl/1, solve_impl_with_speculations/2]).
 
 %--------------------------------------------------------
 
@@ -322,6 +322,92 @@ solve_impl(Size, HZ, T)->
         T3#task.min_cost < ?POSITIVE_INF ->
             #answer{jumps = FinalPath2, cost = T3#task.min_cost};
         true -> ?ERROR_ANSWER
+    end.
+%------------------- solve_impl_with_speculations -----------------------------
+solve_update_path_with_speculations(HandlerPID,  _ , A, T) when A#answer.cost < T#task.min_cost -> T1 = update_task_min_cost(T, A#answer.cost), {A#answer.jumps, T1};
+solve_update_path_with_speculations(HandlerPID, CurrPath, _, T) -> {CurrPath, T}.
+
+solve_right_path_with_speculations(HandlerPID, T, HZ, FinalPath) when (T#task.curr_cost + HZ#zero_info.weight) < T#task.min_cost ->
+    %io:fwrite("dfsdfsdf: ~w\n", [T#task.matrix]),
+    T1 = update_task_matrix(T, HZ#zero_info.row, HZ#zero_info.col, ?POSITIVE_INF),
+    A = solve_impl_with_speculations(HandlerPID, T1#task.size, T1),
+    solve_update_path_with_speculations(HandlerPID, FinalPath, A, T1);
+solve_right_path_with_speculations(HandlerPID, T, HZ, FinalPath) -> {FinalPath, T}.
+
+solve_impl_with_speculations(HandlerPID, T) -> solve_impl_with_speculations(HandlerPID, T#task.size, T).
+solve_impl_with_speculations(HandlerPID, 0, T) -> ?ERROR_ANSWER;
+solve_impl_with_speculations(HandlerPID, 1, T) -> ?ERROR_ANSWER;
+solve_impl_with_speculations(HandlerPID, Size, T) ->
+    %io:fwrite("solve_impl 1\n"),
+    %file:write(IODevice, "solve_impl 1\n"),
+    %print_matrix(T#task.matrix),
+    {Success, NewMatrix, PlusCost} = calculate_plus_cost(T#task.matrix),
+    %io:fwrite("pass 1\n"),
+    if
+        not Success -> ?ERROR_ANSWER;
+        true ->
+            T1 = #task{matrix = NewMatrix, row_mapping = T#task.row_mapping, col_mapping = T#task.col_mapping, jumps = T#task.jumps,
+                curr_cost = T#task.curr_cost + PlusCost, min_cost = T#task.min_cost, size = T#task.size},
+            HZ = find_heaviest_zero(NewMatrix),
+            %io:fwrite("pass 2\n"),
+            %io:fwrite("solve_impl 2 ~w\n",[T1#task.matrix]),
+            %io:fwrite("solve_impl 2\n"),
+            %print_matrix(T1#task.matrix),
+            solve_impl_with_speculations(HandlerPID, Size, HZ, T1)
+    end.
+solve_impl_with_speculations(HandlerPID, 2, HZ, T) ->
+    %io:fwrite("solve_impl size == 2\n"),
+    %io:fwrite("solve_impl size == 2\n"),
+    NextCity = HZ#zero_info.col,
+    PreviousCity = HZ#zero_info.row,
+    Elem1 = get_from_matrix(T#task.matrix, PreviousCity bxor 1, NextCity bxor 1),
+    Elem2 = get_from_matrix(T#task.matrix, PreviousCity bxor 1, NextCity),
+    Elem3 = get_from_matrix(T#task.matrix, PreviousCity, NextCity bxor 1),
+    if
+        (Elem1 == 0) and (Elem2 == ?POSITIVE_INF) and (Elem3 == ?POSITIVE_INF) ->
+            J1 = #jump{source = lists:nth(HZ#zero_info.row+1, T#task.row_mapping),
+                    destination = lists:nth(HZ#zero_info.col+1, T#task.col_mapping)},
+            J2 = #jump{source = lists:nth((HZ#zero_info.row bxor 1) + 1, T#task.row_mapping),
+                    destination = lists:nth((HZ#zero_info.col bxor 1) + 1, T#task.col_mapping)},
+            NewJumps = [J1, J2]++T#task.jumps,
+            #answer{jumps = NewJumps, cost = T#task.curr_cost};
+        true -> ?ERROR_ANSWER
+    end;
+solve_impl_with_speculations(HandlerPID, Size, HZ, T)->
+    %io:fwrite("solve_impl 3\n"),
+    %print_matrix(T#task.matrix),
+    %io:fwrite("solve_impl 3(1) size == ~w\n", [Size]),
+    SubDT = generate_sub_task_data(T#task.matrix, T#task.row_mapping, T#task.col_mapping, T#task.jumps, HZ),
+    T1 = #task{matrix = SubDT#sub_task_data.matrix, row_mapping = SubDT#sub_task_data.row_mapping, col_mapping = SubDT#sub_task_data.col_mapping,
+        jumps = SubDT#sub_task_data.jumps, curr_cost = T#task.curr_cost, min_cost = get_mincost(HandlerPID, T#task.min_cost), size = T#task.size - 1},
+    A = solve_impl_with_speculations(HandlerPID, T1),
+    {FinalPath, T2} = solve_update_path_with_speculations(HandlerPID, [], A, T),
+    %io:fwrite("solve_impl 4 ~w\n",[T2]),
+    %io:fwrite("solve_impl 4\n"),
+    %print_matrix(T2#task.matrix),
+    {FinalPath2, T3} = solve_right_path_with_speculations(HandlerPID, T2, HZ, FinalPath),
+    %io:fwrite("solve_impl 5\n"),
+    %print_matrix(T3#task.matrix),
+    %io:fwrite("solve_impl 5 ~w\n",[T3]),
+    if
+        T3#task.min_cost < ?POSITIVE_INF ->
+            #answer{jumps = FinalPath2, cost = T3#task.min_cost};
+        true -> ?ERROR_ANSWER
+    end.
+
+get_mincost(HandlerPID, CurrentMinValue) ->
+    receive
+        {new_min_value, TaskHandlerPID, MinValue} ->
+            %io:format("[get_mincost ~w] New minvalue.~n", [self()]), 
+            if 
+                (TaskHandlerPID =:= HandlerPID) and (CurrentMinValue > MinValue) ->
+                    io:format("[get_mincost ~w] Updated.~n", [self()]),
+                    get_mincost(HandlerPID, MinValue);
+                true ->
+                    get_mincost(HandlerPID, CurrentMinValue)
+            end
+        after 0 ->
+            CurrentMinValue
     end.
 
 %------------------- crusher_impl -----------------------------
